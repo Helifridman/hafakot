@@ -60,7 +60,11 @@
     border-radius:12px; margin-bottom:8px; cursor:pointer; background:#fff; position:relative;
   }
   .bo-card.selected{border-color:var(--primary); background:var(--primary-soft);}
-  .bo-card.unavail{opacity:.45; pointer-events:none;}
+  .bo-card.unavail{opacity:.55;}
+  .avail-btn{
+    border:none; background:none; font-size:1.15rem; cursor:pointer; padding:6px;
+    flex-shrink:0; line-height:1;
+  }
   .bo-avatar{
     width:42px; height:42px; border-radius:50%; color:#fff; display:flex; align-items:center;
     justify-content:center; font-weight:700; font-size:1.05rem; flex-shrink:0;
@@ -192,8 +196,6 @@
       <h2>🎉 סגרתי עסקה!</h2>
       <label class="fld">מי אני?</label>
       <select id="marketerSel"></select>
-      <label class="fld">סוג ביטוח</label>
-      <div class="type-grid" id="typeGrid"></div>
       <label class="fld">הערה (אופציונלי — שם לקוח / מס' הצעה)</label>
       <input type="text" id="noteInput" maxlength="80" placeholder="למשל: משפחת כהן">
     </div>
@@ -304,14 +306,10 @@ const ADMIN_CODE = "1234";   // 🔑 קוד מסך הניהול — מומלץ �
 
 /* ================================================================ */
 
-const TYPES = [
-  {k:"רכב", e:"🚗"}, {k:"דירה", e:"🏠"}, {k:"עסק", e:"💼"}, {k:"חיים", e:"❤️"},
-  {k:"בריאות", e:"🩺"}, {k:"נסיעות", e:"✈️"}, {k:"משכנתא", e:"🏦"}, {k:"אחר", e:"📄"}
-];
 const PALETTE = ["#e74c3c","#3498db","#27ae60","#9b59b6","#f39c12","#16a085","#e91e63","#795548","#607d8b","#ff5722"];
 
 let db=null, marketers={}, backoffice={}, deals={};
-let selType=null, selBO=null, scope="day";
+let selBO=null, scope="day";
 
 /* ---------- עזרי תאריך ---------- */
 const pad = n => String(n).padStart(2,"0");
@@ -394,13 +392,6 @@ function renderMarketerSel(){
   sel.onchange=()=>localStorage.setItem("myName",sel.value);
 }
 
-function renderTypes(){
-  document.getElementById("typeGrid").innerHTML = TYPES.map(t=>
-    `<div class="type-btn ${selType===t.k?"selected":""}" onclick="pickType('${t.k}')">
-       <span class="emoji">${t.e}</span>${t.k}</div>`).join("");
-}
-function pickType(k){ selType=k; renderTypes(); }
-
 function renderBOPicker(){
   const st=boStats(), next=nextInLineId();
   if(selBO && (!backoffice[selBO] || !isAvailable(backoffice[selBO]))) selBO=null;
@@ -409,27 +400,40 @@ function renderBOPicker(){
     const avail=isAvailable(bo);
     const badge = !avail ? '<span class="unavail-badge">לא זמינה היום</span>'
                 : id===next ? '<span class="next-badge">⭐ הבאה בתור</span>' : "";
+    const availBtn = avail
+      ? `<button class="avail-btn" title="סמני כלא זמינה היום" onclick="event.stopPropagation();markUnavail('${id}')">🚫</button>`
+      : `<button class="avail-btn" title="החזירי לזמינות" onclick="event.stopPropagation();markAvail('${id}')">↩️</button>`;
     return `<div class="bo-card ${id===effective&&avail?"selected":""} ${avail?"":"unavail"}" onclick="pickBO('${id}')">
       <div class="bo-avatar" style="background:${bo.color}">${esc(bo.name.slice(0,2))}</div>
       <div class="bo-info">
         <div class="bo-name">${esc(bo.name)}</div>
         <div class="bo-counts">היום: ${st[id].day} · השבוע: ${st[id].week}</div>
-      </div>${badge}</div>`;
+      </div>${badge}${availBtn}</div>`;
   }).join("");
   document.getElementById("boList").innerHTML = html || '<div class="empty">אין בנות בק אופיס — הוסיפי במסך הניהול ⚙️</div>';
 }
 function pickBO(id){ if(backoffice[id]&&isAvailable(backoffice[id])){ selBO=id; renderBOPicker(); } }
+
+function markUnavail(id){
+  if(!db || !backoffice[id]) return;
+  if(confirm("לסמן את "+backoffice[id].name+" כלא זמינה היום? (התור ידלג עליה)"))
+    db.ref("config/backoffice/"+id+"/unavailable").set(todayKey());
+}
+function markAvail(id){
+  if(!db || !backoffice[id]) return;
+  db.ref("config/backoffice/"+id+"/unavailable").set("");
+  toast(backoffice[id].name+" חזרה לתור 👍");
+}
 
 function submitDeal(){
   if(!db) return;
   const name=document.getElementById("marketerSel").value;
   const assignee = selBO || nextInLineId();
   if(!name){ toast("בחר/י את השם שלך 🙂"); return; }
-  if(!selType){ toast("בחר/י סוג ביטוח"); return; }
-  if(!assignee){ toast("אין בת בק אופיס זמינה — בדקי במסך הניהול"); return; }
+  if(!assignee){ toast("אין בת בק אופיס זמינה היום"); return; }
   const btn=document.getElementById("submitBtn"); btn.disabled=true;
   const deal={
-    marketer:name, type:selType,
+    marketer:name,
     note:document.getElementById("noteInput").value.trim(),
     assigneeId:assignee, assigneeName:backoffice[assignee].name,
     status:"new", ts:firebase.database.ServerValue.TIMESTAMP
@@ -439,8 +443,8 @@ function submitDeal(){
   // גם במצב לא-מקוון Firebase שומר את הכתיבה ושולח כשחוזר חיבור
   setTimeout(()=>{
     btn.disabled=false;
-    document.getElementById("noteInput").value=""; selType=null; selBO=null;
-    renderTypes(); renderBOPicker();
+    document.getElementById("noteInput").value=""; selBO=null;
+    renderBOPicker();
     toast("🎉 העסקה שויכה ל"+deal.assigneeName+"!");
     switchTab("feed");
   }, 300);
@@ -455,12 +459,10 @@ function renderFeed(){
   document.getElementById("feedCount").textContent=today.length+" הפקות היום";
   document.getElementById("feedList").innerHTML = today.length ? today.map(d=>{
     const color=(backoffice[d.assigneeId]||{}).color||"#9ca3af";
-    const t=TYPES.find(t=>t.k===d.type)||{e:"📄"};
     return `<div class="feed-item" style="border-right-color:${color}">
       <div class="feed-top"><span class="feed-marketer">${esc(d.marketer)}</span>
         <span class="feed-time">${fmtTime(d.ts)}</span></div>
-      <div class="feed-mid"><span class="chip">${t.e} ${esc(d.type)}</span>
-        ${d.note?`<span class="feed-note">📝 ${esc(d.note)}</span>`:""}</div>
+      ${d.note?`<div class="feed-mid"><span class="feed-note">📝 ${esc(d.note)}</span></div>`:""}
       <div class="feed-bottom">
         <span class="assignee-tag"><span class="assignee-dot" style="background:${color}"></span>➤ ${esc(d.assigneeName)}</span>
         <span class="status-btns">
@@ -579,7 +581,7 @@ function toggleAvail(id){
 /* ---------- כללי ---------- */
 function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function renderAll(){
-  renderMarketerSel(); renderTypes(); renderBOPicker(); renderFeed(); renderSummary(); renderAdmin();
+  renderMarketerSel(); renderBOPicker(); renderFeed(); renderSummary(); renderAdmin();
 }
 renderAll();
 /* רענון תצוגת "היום" אם הדף נשאר פתוח מעבר לחצות */
