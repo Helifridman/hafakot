@@ -142,6 +142,7 @@
     font-size:.78rem; cursor:pointer; color:var(--muted); white-space:nowrap;
   }
   .mini-btn.danger{color:#dc2626; border-color:#fecaca;}
+  .mini-btn.toggled{background:#fee2e2; border-color:#dc2626; color:#dc2626; font-weight:700;}
   .add-row{display:flex; gap:8px; margin-top:12px;}
   .add-row input{
     flex:1; padding:11px; font-size:1rem; border:1px solid var(--border); border-radius:10px;
@@ -261,6 +262,13 @@ window.addEventListener("error", function(e){
           <button onclick="addMk()">＋</button>
         </div>
       </div>
+      <div class="card">
+        <h2>🧹 איפוס</h2>
+        <div style="font-size:.85rem;color:var(--muted);margin-bottom:4px;">
+          מוחק את כל ההפקות שנרשמו (המונים, הפיד והסיכומים יתאפסו). רשימות הצוות נשארות.
+        </div>
+        <button class="btn" style="background:#dc2626;" onclick="resetDeals()">🗑️ מחיקת כל ההפקות</button>
+      </div>
     </div>
   </section>
 
@@ -376,7 +384,6 @@ function renderPoll(){
         <div class="poll-avatar" style="background:${bo.color}">${esc(bo.name.slice(0,2))}</div>
         <div class="poll-name">${esc(bo.name)}</div>
         <span class="unavail-txt">לא זמינה היום</span>
-        <button class="avail-btn" title="החזרה לתור" onclick="event.stopPropagation();markAvail('${id}')">↩️</button>
       </div>`;
     }
     return `<div class="poll-opt" onclick="pollTap('${id}')">
@@ -385,7 +392,6 @@ function renderPoll(){
       <div class="poll-name">${esc(bo.name)}</div>
       ${id===next?'<span class="next-badge">⭐ הבאה בתור</span>':""}
       <div class="poll-count">${st[id].day}</div>
-      <button class="avail-btn" title="סימון כלא זמינה היום" onclick="event.stopPropagation();markUnavail('${id}')">🚫</button>
     </div>`;
   }).join("");
   document.getElementById("pollList").innerHTML = html || '<div class="empty">אין שמות עדיין — מוסיפים במסך ⚙️ ניהול</div>';
@@ -520,7 +526,8 @@ function renderAdmin(){
     const off=!isAvailable(bo);
     return `<div class="admin-row">
       <div class="mini-avatar" style="background:${bo.color}">${esc(bo.name.slice(0,2))}</div>
-      <div class="name">${esc(bo.name)}${off?' <span style="color:#dc2626;font-size:.75rem;">(לא זמינה היום)</span>':""}</div>
+      <div class="name">${esc(bo.name)}</div>
+      <button class="mini-btn ${off?'toggled':''}" onclick="${off?`markAvail('${id}')`:`markUnavail('${id}')`}">${off?"🚫 חסומה היום":"זמינה"}</button>
       <button class="mini-btn danger" onclick="delBO('${id}')">מחיקה</button></div>`;
   }).join("")||'<div class="empty" style="padding:10px;">אין עדיין — מוסיפים למטה</div>';
   document.getElementById("adminMk").innerHTML=Object.entries(marketers).map(([id,m])=>
@@ -539,6 +546,11 @@ function addMk(){
   if(!name) return;
   db.ref("config/marketers").push({name});
   inp.value="";
+}
+function resetDeals(){
+  if(!confirm("למחוק את כל ההפקות שנרשמו? רשימות הצוות יישארו.")) return;
+  if(!confirm("בטוחה? אי אפשר לשחזר אחרי המחיקה.")) return;
+  db.ref("deals").remove().then(function(){ toast("כל ההפקות נמחקו 🧹"); });
 }
 function delBO(id){ if(confirm("למחוק את "+backoffice[id].name+"?")) db.ref("config/backoffice/"+id).remove(); }
 function delMk(id){ if(confirm("למחוק את "+marketers[id].name+"?")) db.ref("config/marketers/"+id).remove(); }
