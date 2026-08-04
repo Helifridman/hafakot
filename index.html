@@ -59,7 +59,7 @@
   }
   .poll-opt:active{transform:scale(.98);}
   .poll-fill{
-    position:absolute; inset-block:0; right:0; background:var(--primary-soft);
+    position:absolute; top:0; bottom:0; right:0; background:var(--primary-soft);
     z-index:0; border-radius:0; transition:width .3s;
   }
   .poll-opt > *:not(.poll-fill){position:relative; z-index:1;}
@@ -180,6 +180,20 @@
 </style>
 </head>
 <body>
+
+<script>
+/* רשת ביטחון: אם יש שגיאת סקריפט (למשל בדפדפן ישן) — להציג הודעה במקום מסך ריק */
+window.addEventListener("error", function(e){
+  var d = document.getElementById("errBanner");
+  if(!d){
+    d = document.createElement("div");
+    d.id = "errBanner";
+    d.style.cssText = "background:#fee2e2;color:#991b1b;padding:10px 14px;font-size:13px;text-align:center;direction:rtl;";
+    document.body.insertBefore(d, document.body.firstChild);
+  }
+  d.textContent = "⚠️ שגיאה בטעינה: " + (e.message || "לא ידועה") + " — נסו לעדכן את הדפדפן או שלחו צילום מסך למנהלת";
+});
+</script>
 
 <header>
   <h1>📋 שיוך הפקות</h1>
@@ -530,7 +544,7 @@ function delBO(id){ if(confirm("למחוק את "+backoffice[id].name+"?")) db.r
 function delMk(id){ if(confirm("למחוק את "+marketers[id].name+"?")) db.ref("config/marketers/"+id).remove(); }
 
 /* ---------- כללי ---------- */
-function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
 function renderAll(){ renderPoll(); renderToday(); renderSummary(); renderAdmin(); renderMe(); }
 renderAll();
 setInterval(renderAll, 60*1000);
