@@ -263,6 +263,13 @@ window.addEventListener("error", function(e){
         </div>
       </div>
       <div class="card">
+        <h2>↩️ ביטול הפקה</h2>
+        <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px;">
+          נרשמה הפקה בטעות או שלא הופקה בסוף? כאן מבטלים — היא תרד מהמונה ומהסיכומים.
+        </div>
+        <div id="adminDeals"></div>
+      </div>
+      <div class="card">
         <h2>🧹 איפוס</h2>
         <div style="font-size:.85rem;color:var(--muted);margin-bottom:4px;">
           מוחק את כל ההפקות שנרשמו (המונים, הפיד והסיכומים יתאפסו). רשימות הצוות נשארות.
@@ -534,6 +541,21 @@ function renderAdmin(){
     `<div class="admin-row"><div class="name">${esc(m.name)}</div>
      <button class="mini-btn danger" onclick="delMk('${id}')">מחיקה</button></div>`
   ).join("")||'<div class="empty" style="padding:10px;">אין עדיין — מוסיפים למטה</div>';
+  const recent=dealList().reverse().slice(0,20);
+  document.getElementById("adminDeals").innerHTML = recent.length ? recent.map(d=>{
+    const when = dayKey(d.ts)===todayKey() ? fmtTime(d.ts) : fmtDate(d.ts)+" "+fmtTime(d.ts);
+    return `<div class="admin-row">
+      <div class="name" style="font-weight:400;font-size:.88rem;">
+        <span style="color:var(--muted);font-size:.78rem;">${when}</span> ·
+        ${esc(d.marketer)} ➤ <b>${esc(d.assigneeName)}</b>
+      </div>
+      <button class="mini-btn danger" onclick="delDeal('${d.id}')">ביטול</button></div>`;
+  }).join("") : '<div class="empty" style="padding:10px;">אין הפקות רשומות</div>';
+}
+function delDeal(id){
+  const d=deals[id]; if(!d) return;
+  if(confirm("לבטל את ההפקה של "+d.marketer+" שהועברה ל"+d.assigneeName+"?"))
+    db.ref("deals/"+id).remove().then(function(){ toast("ההפקה בוטלה ↩️"); });
 }
 function addBO(){
   const inp=document.getElementById("newBOName"), name=inp.value.trim();
