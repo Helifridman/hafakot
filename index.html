@@ -92,6 +92,10 @@
   }
   .today-row:last-child{border-bottom:none;}
   .today-time{color:var(--muted); font-size:.78rem; white-space:nowrap;}
+  .cancel-x{
+    border:1px solid #fecaca; background:#fff; color:#dc2626; font-size:.75rem; cursor:pointer;
+    padding:4px 10px; border-radius:99px; margin-right:auto; white-space:nowrap;
+  }
   .today-dot{width:10px; height:10px; border-radius:50%; flex-shrink:0;}
   .empty{text-align:center; color:var(--muted); padding:24px 10px; font-size:.92rem;}
 
@@ -466,6 +470,7 @@ function renderToday(){
       <span class="today-time">${fmtTime(d.ts)}</span>
       <span>${esc(d.marketer)}</span> ➤
       <span class="today-dot" style="background:${color}"></span><b>${esc(d.assigneeName)}</b>
+      <button class="cancel-x" onclick="delDeal('${d.id}')">ביטול</button>
     </div>`;
   }).join("") : '<div class="empty">עדיין אין הפקות היום 🚀</div>';
 }
