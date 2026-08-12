@@ -320,7 +320,7 @@ const ADMIN_CODE = "1234";   // 🔑 קוד מסך הניהול
 const PALETTE = ["#e74c3c","#3498db","#27ae60","#9b59b6","#f39c12","#16a085","#e91e63","#795548","#607d8b","#ff5722"];
 
 let db=null, marketers={}, backoffice={}, deals={};
-let scope="day", pendingAssignee=null;
+let scope="day", pendingAssignee=null, queueOverride=null;
 
 /* ---------- תאריכים ---------- */
 const pad = n => String(n).padStart(2,"0");
@@ -343,6 +343,7 @@ db.ref(".info/connected").on("value", s => {
 db.ref("config/marketers").on("value", s => { marketers = s.val()||{}; renderAll(); });
 db.ref("config/backoffice").on("value", s => { backoffice = s.val()||{}; renderAll(); });
 db.ref("deals").orderByChild("ts").limitToLast(1500).on("value", s => { deals = s.val()||{}; renderAll(); });
+db.ref("queueOverride").on("value", s => { queueOverride = s.val(); renderAll(); });
 
 /* ---------- ניווט ---------- */
 function switchTab(name){
@@ -373,6 +374,9 @@ function boStats(){
 }
 function isAvailable(bo){ return bo.unavailable !== todayKey(); }
 function nextInLineId(){
+  /* בוטלה הפקה למישהי? היא קופצת לראש התור עד שתקבל הפקה חדשה */
+  if(queueOverride && queueOverride.id && backoffice[queueOverride.id] && isAvailable(backoffice[queueOverride.id]))
+    return queueOverride.id;
   const st=boStats();
   let best=null, bestLast=Infinity;
   Object.entries(backoffice).forEach(([id,bo])=>{
@@ -419,6 +423,8 @@ function recordDeal(me, id){
     marketer:me, assigneeId:id, assigneeName:backoffice[id].name,
     ts:firebase.database.ServerValue.TIMESTAMP
   });
+  /* קיבלה הפקה — הקפיצה לראש התור מתבטלת */
+  if(queueOverride && queueOverride.id===id) db.ref("queueOverride").remove();
   toast("🎉 נרשם! ההפקה עברה ל"+backoffice[id].name);
 }
 
@@ -559,8 +565,12 @@ function renderAdmin(){
 }
 function delDeal(id){
   const d=deals[id]; if(!d) return;
-  if(confirm("לבטל את ההפקה של "+d.marketer+" שהועברה ל"+d.assigneeName+"?"))
-    db.ref("deals/"+id).remove().then(function(){ toast("ההפקה בוטלה ↩️"); });
+  if(!confirm("לבטל את ההפקה של "+d.marketer+" שהועברה ל"+d.assigneeName+"?")) return;
+  db.ref("deals/"+id).remove().then(function(){
+    /* מי שבוטלה לה ההפקה חוזרת להיות הבאה בתור */
+    db.ref("queueOverride").set({id:d.assigneeId, name:d.assigneeName});
+    toast("ההפקה בוטלה — "+d.assigneeName+" חזרה לראש התור ↩️");
+  });
 }
 function addBO(){
   const inp=document.getElementById("newBOName"), name=inp.value.trim();
@@ -577,7 +587,10 @@ function addMk(){
 function resetDeals(){
   if(!confirm("למחוק את כל ההפקות שנרשמו? רשימות הצוות יישארו.")) return;
   if(!confirm("בטוחה? אי אפשר לשחזר אחרי המחיקה.")) return;
-  db.ref("deals").remove().then(function(){ toast("כל ההפקות נמחקו 🧹"); });
+  db.ref("deals").remove().then(function(){
+    db.ref("queueOverride").remove();
+    toast("כל ההפקות נמחקו 🧹");
+  });
 }
 function delBO(id){ if(confirm("למחוק את "+backoffice[id].name+"?")) db.ref("config/backoffice/"+id).remove(); }
 function delMk(id){ if(confirm("למחוק את "+marketers[id].name+"?")) db.ref("config/marketers/"+id).remove(); }
