@@ -280,6 +280,14 @@ window.addEventListener("error", function(e){
         <button class="btn secondary" onclick="resetRound()">🔄 אפס את הסבב מהתחלה</button>
       </div>
       <div class="card">
+        <h2>🌅 סוף יום</h2>
+        <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px;">
+          מכין את המערכת ליום הבא: המונה היומי מתאפס, הסבב חוזר לראשונה ברשימת הסדר,
+          וחסימות של היום נפתחות. אחרי הלחיצה אפשר לחסום מראש מי שלא תהיה מחר.
+        </div>
+        <button class="btn" onclick="nextDay()">🌅 מעבר ליום הבא</button>
+      </div>
+      <div class="card">
         <h2>↩️ ביטול הפקה</h2>
         <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px;">
           נרשמה הפקה בטעות או שלא הופקה בסוף? כאן מבטלים — היא תרד מהמונה ומהסיכומים.
@@ -333,7 +341,7 @@ const ADMIN_CODE = "1234";   // 🔑 קוד מסך הניהול
 const PALETTE = ["#e74c3c","#3498db","#27ae60","#9b59b6","#f39c12","#16a085","#e91e63","#795548","#607d8b","#ff5722"];
 
 let db=null, marketers={}, backoffice={}, deals={};
-let scope="day", pendingAssignee=null, queueOverride=null, order=[], roundStart=0;
+let scope="day", pendingAssignee=null, queueOverride=null, order=[], roundStart=0, dayStart=0, workDay="";
 
 /* ---------- תאריכים ---------- */
 /* אחסון בטוח — לא מפיל את הדף כשהאחסון חסום (מצב פרטי וכו') */
@@ -348,6 +356,18 @@ const todayKey = () => dayKey(Date.now());
 function startOfDay(){ const d=new Date(); d.setHours(0,0,0,0); return d.getTime(); }
 function startOfWeek(){ const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-d.getDay()); return d.getTime(); }
 function startOfMonth(){ const d=new Date(); d.setHours(0,0,0,0); d.setDate(1); return d.getTime(); }
+
+/* "יום העבודה" הנוכחי: היום, או מחר אם נלחץ "מעבר ליום הבא" הערב */
+function currentWorkDay(){ const t=todayKey(); return (workDay && workDay>t) ? workDay : t; }
+/* מאיזה רגע נספרות ההפקות של "היום" בתצוגה */
+function effDayStart(){
+  const t=todayKey();
+  if(workDay >= t && dayStart){
+    if(workDay > t) return dayStart;            /* ערב הכנה — היום החדש התחיל ברגע הלחיצה */
+    if(dayKey(dayStart) < t) return dayStart;   /* בוקר אחרי הכנה מהערב — כולל מה שנרשם מאז */
+  }
+  return startOfDay();
+}
 const fmtTime = ts => new Date(ts).toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit"});
 const fmtDate = ts => new Date(ts).toLocaleDateString("he-IL",{day:"numeric",month:"numeric",year:"numeric"});
 
@@ -365,6 +385,8 @@ db.ref("deals").orderByChild("ts").limitToLast(1500).on("value", s => { deals = 
 db.ref("queueOverride").on("value", s => { queueOverride = s.val(); renderAll(); });
 db.ref("config/order").on("value", s => { order = s.val()||[]; renderAll(); });
 db.ref("config/roundStart").on("value", s => { roundStart = s.val()||0; renderAll(); });
+db.ref("config/dayStart").on("value", s => { dayStart = s.val()||0; renderAll(); });
+db.ref("config/workDay").on("value", s => { workDay = s.val()||""; renderAll(); });
 
 /* ---------- ניווט ---------- */
 function switchTab(name){
@@ -383,7 +405,7 @@ function toast(msg){
 /* ---------- חישובים ---------- */
 function dealList(){ return Object.entries(deals).map(([id,d])=>({id,...d})).sort((a,b)=>(a.ts||0)-(b.ts||0)); }
 function boStats(){
-  const list=dealList(), sd=startOfDay();
+  const list=dealList(), sd=effDayStart();
   const st={};
   Object.keys(backoffice).forEach(id => st[id]={day:0,last:0});
   list.forEach(d=>{
@@ -393,7 +415,7 @@ function boStats(){
   });
   return st;
 }
-function isAvailable(bo){ return bo.unavailable !== todayKey(); }
+function isAvailable(bo){ return bo.unavailable !== currentWorkDay(); }
 /* הסדר בפועל: config/order מסונן לקיימות, ומי שחסרה מצטרפת לסוף */
 function effectiveOrder(){
   const ids=(order||[]).filter(id => backoffice[id]);
@@ -475,8 +497,9 @@ function recordDeal(me, id){
 /* ---------- זמינות ---------- */
 function markUnavail(id){
   if(!backoffice[id]) return;
-  if(confirm("לסמן את "+backoffice[id].name+" כלא זמינה היום? (התור ידלג עליה)"))
-    db.ref("config/backoffice/"+id+"/unavailable").set(todayKey());
+  const when = currentWorkDay()>todayKey() ? "מחר" : "היום";
+  if(confirm("לחסום את "+backoffice[id].name+" ל"+when+"? (התור ידלג עליה)"))
+    db.ref("config/backoffice/"+id+"/unavailable").set(currentWorkDay());
 }
 function markAvail(id){
   if(!backoffice[id]) return;
@@ -511,9 +534,10 @@ function renderMe(){
 
 /* ---------- רשימת היום ---------- */
 function renderToday(){
-  const sd=startOfDay();
+  const sd=effDayStart();
   const today=dealList().filter(d=>d.ts>=sd).reverse();
-  document.getElementById("todayTitle").textContent = "ההפקות של היום ("+today.length+") · "+fmtDate(Date.now());
+  const prep = currentWorkDay()>todayKey() ? " · מוכן ליום הבא 🌅" : "";
+  document.getElementById("todayTitle").textContent = "ההפקות של היום ("+today.length+") · "+fmtDate(Date.now())+prep;
   document.getElementById("todayList").innerHTML = today.length ? today.map(d=>{
     const color=(backoffice[d.assigneeId]||{}).color||"#9ca3af";
     return `<div class="today-row">
@@ -531,7 +555,7 @@ function setScope(s){
   document.querySelectorAll(".scope-tabs button").forEach(b=>b.classList.toggle("on",b.dataset.scope===s));
   renderSummary();
 }
-function scopeStart(){ return scope==="day"?startOfDay():scope==="week"?startOfWeek():startOfMonth(); }
+function scopeStart(){ return scope==="day"?effDayStart():scope==="week"?startOfWeek():startOfMonth(); }
 const scopeName=()=>({day:"היום",week:"השבוע",month:"החודש"})[scope];
 function summaryData(){
   const from=scopeStart(), list=dealList().filter(d=>d.ts>=from);
@@ -590,7 +614,7 @@ function renderAdmin(){
       <div class="mini-avatar" style="background:${bo.color}">${esc(bo.name.slice(0,2))}</div>
       <div class="name">${esc(bo.name)}</div>
       <select class="quota-sel" title="כמה הפקות רצוף לפני שהתור עובר" onchange="setQuota('${id}',this.value)">${[1,2,3,4,5].map(q=>`<option value="${q}" ${q===(bo.quota||1)?"selected":""}>×${q}</option>`).join("")}</select>
-      <button class="mini-btn ${off?'toggled':''}" onclick="${off?`markAvail('${id}')`:`markUnavail('${id}')`}">${off?"🚫 חסומה היום":"זמינה"}</button>
+      <button class="mini-btn ${off?'toggled':''}" onclick="${off?`markAvail('${id}')`:`markUnavail('${id}')`}">${off?"🚫 חסומה":"זמינה"}</button>
       <button class="mini-btn danger" onclick="delBO('${id}')">מחיקה</button></div>`;
   }).join("")||'<div class="empty" style="padding:10px;">אין עדיין — מוסיפים למטה</div>';
   document.getElementById("adminMk").innerHTML=Object.entries(marketers).map(([id,m])=>
@@ -634,6 +658,15 @@ function moveOrder(id,dir){
   if(i<0||j<0||j>=ord.length) return;
   ord[i]=ord[j]; ord[j]=id;
   db.ref("config/order").set(ord);
+}
+function nextDay(){
+  if(!confirm("לעבור ליום הבא? המונה היומי יתאפס, הסבב יתחיל מהראשונה ברשימה, וחסימות של היום ייפתחו.")) return;
+  const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+1);
+  db.ref("config/workDay").set(dayKey(d.getTime()));
+  db.ref("config/dayStart").set(firebase.database.ServerValue.TIMESTAMP);
+  db.ref("config/roundStart").set(firebase.database.ServerValue.TIMESTAMP);
+  db.ref("queueOverride").remove();
+  toast("היום הבא מוכן 🌅 הסבב יתחיל מהראשונה ברשימה");
 }
 function resetRound(){
   if(confirm("להתחיל את הסבב מחדש? הראשונה ברשימת הסדר תהיה הבאה בתור."))
