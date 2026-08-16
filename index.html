@@ -147,6 +147,11 @@
   }
   .mini-btn.danger{color:#dc2626; border-color:#fecaca;}
   .mini-btn.toggled{background:#fee2e2; border-color:#dc2626; color:#dc2626; font-weight:700;}
+  .mini-btn:disabled{opacity:.35; cursor:default;}
+  .quota-sel{
+    border:1.5px solid var(--border); border-radius:8px; padding:5px 4px; font-size:.8rem;
+    background:#fff; color:var(--text); cursor:pointer;
+  }
   .add-row{display:flex; gap:8px; margin-top:12px;}
   .add-row input{
     flex:1; padding:11px; font-size:1rem; border:1px solid var(--border); border-radius:10px;
@@ -267,6 +272,14 @@ window.addEventListener("error", function(e){
         </div>
       </div>
       <div class="card">
+        <h2>🔁 סדר התור להיום</h2>
+        <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px;">
+          הסבב מתקדם לפי הסדר הזה (מי שלא זמינה — מדולגת). הראשונה ברשימה מתחילה את הסבב.
+        </div>
+        <div id="adminOrder"></div>
+        <button class="btn secondary" onclick="resetRound()">🔄 אפס את הסבב מהתחלה</button>
+      </div>
+      <div class="card">
         <h2>↩️ ביטול הפקה</h2>
         <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px;">
           נרשמה הפקה בטעות או שלא הופקה בסוף? כאן מבטלים — היא תרד מהמונה ומהסיכומים.
@@ -320,9 +333,15 @@ const ADMIN_CODE = "1234";   // 🔑 קוד מסך הניהול
 const PALETTE = ["#e74c3c","#3498db","#27ae60","#9b59b6","#f39c12","#16a085","#e91e63","#795548","#607d8b","#ff5722"];
 
 let db=null, marketers={}, backoffice={}, deals={};
-let scope="day", pendingAssignee=null, queueOverride=null;
+let scope="day", pendingAssignee=null, queueOverride=null, order=[], roundStart=0;
 
 /* ---------- תאריכים ---------- */
+/* אחסון בטוח — לא מפיל את הדף כשהאחסון חסום (מצב פרטי וכו') */
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+function ssGet(k){ try{ return sessionStorage.getItem(k); }catch(e){ return null; } }
+function ssSet(k,v){ try{ sessionStorage.setItem(k,v); }catch(e){} }
+
 const pad = n => String(n).padStart(2,"0");
 function dayKey(ts){ const d=new Date(ts); return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); }
 const todayKey = () => dayKey(Date.now());
@@ -344,6 +363,8 @@ db.ref("config/marketers").on("value", s => { marketers = s.val()||{}; renderAll
 db.ref("config/backoffice").on("value", s => { backoffice = s.val()||{}; renderAll(); });
 db.ref("deals").orderByChild("ts").limitToLast(1500).on("value", s => { deals = s.val()||{}; renderAll(); });
 db.ref("queueOverride").on("value", s => { queueOverride = s.val(); renderAll(); });
+db.ref("config/order").on("value", s => { order = s.val()||[]; renderAll(); });
+db.ref("config/roundStart").on("value", s => { roundStart = s.val()||0; renderAll(); });
 
 /* ---------- ניווט ---------- */
 function switchTab(name){
@@ -373,22 +394,45 @@ function boStats(){
   return st;
 }
 function isAvailable(bo){ return bo.unavailable !== todayKey(); }
-function nextInLineId(){
+/* הסדר בפועל: config/order מסונן לקיימות, ומי שחסרה מצטרפת לסוף */
+function effectiveOrder(){
+  const ids=(order||[]).filter(id => backoffice[id]);
+  Object.keys(backoffice).forEach(id => { if(ids.indexOf(id)===-1) ids.push(id); });
+  return ids;
+}
+
+/* מי הבאה בתור + באיזה שלב של המכפיל שלה (pos מתוך quota) */
+function nextInfo(){
   /* בוטלה הפקה למישהי? היא קופצת לראש התור עד שתקבל הפקה חדשה */
   if(queueOverride && queueOverride.id && backoffice[queueOverride.id] && isAvailable(backoffice[queueOverride.id]))
-    return queueOverride.id;
-  const st=boStats();
-  let best=null, bestLast=Infinity;
-  Object.entries(backoffice).forEach(([id,bo])=>{
-    if(!isAvailable(bo)) return;
-    if(st[id].last < bestLast){ bestLast=st[id].last; best=id; }
-  });
-  return best;
+    return {id:queueOverride.id, pos:1, quota:(backoffice[queueOverride.id].quota||1)};
+  const ord=effectiveOrder();
+  if(!ord.length) return null;
+  /* נספרות רק הפקות מאז תחילת הסבב הנוכחי */
+  const considered=dealList().filter(d => d.ts>=(roundStart||0) && backoffice[d.assigneeId]);
+  let startIdx=0;
+  if(considered.length){
+    const lastId=considered[considered.length-1].assigneeId;
+    let streak=0;
+    for(let i=considered.length-1; i>=0 && considered[i].assigneeId===lastId; i--) streak++;
+    const q=backoffice[lastId].quota||1;
+    if(isAvailable(backoffice[lastId]) && streak<q)
+      return {id:lastId, pos:streak+1, quota:q};
+    const li=ord.indexOf(lastId);
+    startIdx = li===-1 ? 0 : (li+1)%ord.length;
+  }
+  for(let k=0;k<ord.length;k++){
+    const id=ord[(startIdx+k)%ord.length];
+    if(isAvailable(backoffice[id])) return {id:id, pos:1, quota:(backoffice[id].quota||1)};
+  }
+  return null;
 }
+function nextInLineId(){ const n=nextInfo(); return n?n.id:null; }
 
 /* ---------- הסקר ---------- */
 function renderPoll(){
-  const st=boStats(), next=nextInLineId();
+  const st=boStats(), ni=nextInfo(), next=ni?ni.id:null;
+  const nextLabel = ni ? "⭐ הבאה בתור"+(ni.quota>1?" ("+ni.pos+" מתוך "+ni.quota+")":"") : "";
   const entries=Object.entries(backoffice);
   const maxDay=Math.max(1, ...entries.map(([id])=>st[id].day));
   const html=entries.map(([id,bo])=>{
@@ -405,7 +449,7 @@ function renderPoll(){
       <div class="poll-fill" style="width:${st[id].day?fillPct:0}%"></div>
       <div class="poll-avatar" style="background:${bo.color}">${esc(bo.name.slice(0,2))}</div>
       <div class="poll-name">${esc(bo.name)}</div>
-      ${id===next?'<span class="next-badge">⭐ הבאה בתור</span>':""}
+      ${id===next?'<span class="next-badge">'+nextLabel+'</span>':""}
       <div class="poll-count">${st[id].day}</div>
     </div>`;
   }).join("");
@@ -414,7 +458,7 @@ function renderPoll(){
 
 function pollTap(id){
   if(!backoffice[id] || !isAvailable(backoffice[id])) return;
-  const me=localStorage.getItem("myName");
+  const me=lsGet("myName");
   if(!me){ pendingAssignee=id; openNameModal(id); return; }
   if(confirm("להעביר הפקה ל"+backoffice[id].name+"?")) recordDeal(me, id);
 }
@@ -453,7 +497,7 @@ function openNameModal(assigneeId){
 function pickNameIdx(i){ if(nameOptions[i]!==undefined) pickName(nameOptions[i]); }
 function closeNameModal(){ document.getElementById("nameModal").classList.remove("show"); pendingAssignee=null; }
 function pickName(name){
-  localStorage.setItem("myName", name);
+  lsSet("myName", name);
   document.getElementById("nameModal").classList.remove("show");
   renderMe();
   if(pendingAssignee){
@@ -462,7 +506,7 @@ function pickName(name){
   }
 }
 function renderMe(){
-  document.getElementById("meName").textContent = localStorage.getItem("myName") || "לא נבחר";
+  document.getElementById("meName").textContent = lsGet("myName") || "לא נבחר";
 }
 
 /* ---------- רשימת היום ---------- */
@@ -533,11 +577,11 @@ function shareWhatsapp(){ window.open("https://wa.me/?text="+encodeURIComponent(
 /* ---------- ניהול ---------- */
 function tryAdmin(){
   if(document.getElementById("adminCodeInput").value===ADMIN_CODE){
-    sessionStorage.setItem("adminOk","1"); renderAdmin();
+    ssSet("adminOk","1"); renderAdmin();
   } else toast("קוד שגוי");
 }
 function renderAdmin(){
-  if(sessionStorage.getItem("adminOk")!=="1") return;
+  if(ssGet("adminOk")!=="1") return;
   document.getElementById("adminLock").style.display="none";
   document.getElementById("adminArea").style.display="block";
   document.getElementById("adminBO").innerHTML=Object.entries(backoffice).map(([id,bo])=>{
@@ -545,6 +589,7 @@ function renderAdmin(){
     return `<div class="admin-row">
       <div class="mini-avatar" style="background:${bo.color}">${esc(bo.name.slice(0,2))}</div>
       <div class="name">${esc(bo.name)}</div>
+      <select class="quota-sel" title="כמה הפקות רצוף לפני שהתור עובר" onchange="setQuota('${id}',this.value)">${[1,2,3,4,5].map(q=>`<option value="${q}" ${q===(bo.quota||1)?"selected":""}>×${q}</option>`).join("")}</select>
       <button class="mini-btn ${off?'toggled':''}" onclick="${off?`markAvail('${id}')`:`markUnavail('${id}')`}">${off?"🚫 חסומה היום":"זמינה"}</button>
       <button class="mini-btn danger" onclick="delBO('${id}')">מחיקה</button></div>`;
   }).join("")||'<div class="empty" style="padding:10px;">אין עדיין — מוסיפים למטה</div>';
@@ -552,6 +597,17 @@ function renderAdmin(){
     `<div class="admin-row"><div class="name">${esc(m.name)}</div>
      <button class="mini-btn danger" onclick="delMk('${id}')">מחיקה</button></div>`
   ).join("")||'<div class="empty" style="padding:10px;">אין עדיין — מוסיפים למטה</div>';
+  const ord=effectiveOrder();
+  document.getElementById("adminOrder").innerHTML = ord.length ? ord.map((id,i)=>{
+    const bo=backoffice[id];
+    return `<div class="admin-row">
+      <span style="color:var(--muted);font-size:.8rem;min-width:16px;">${i+1}.</span>
+      <div class="mini-avatar" style="background:${bo.color}">${esc(bo.name.slice(0,2))}</div>
+      <div class="name">${esc(bo.name)}${isAvailable(bo)?"":' <span style="color:#dc2626;font-size:.75rem;">(חסומה)</span>'}</div>
+      <button class="mini-btn" ${i===0?"disabled":""} onclick="moveOrder('${id}',-1)">⬆️</button>
+      <button class="mini-btn" ${i===ord.length-1?"disabled":""} onclick="moveOrder('${id}',1)">⬇️</button>
+    </div>`;
+  }).join("") : '<div class="empty" style="padding:10px;">אין בנות ברשימה</div>';
   const recent=dealList().reverse().slice(0,20);
   document.getElementById("adminDeals").innerHTML = recent.length ? recent.map(d=>{
     const when = dayKey(d.ts)===todayKey() ? fmtTime(d.ts) : fmtDate(d.ts)+" "+fmtTime(d.ts);
@@ -572,10 +628,22 @@ function delDeal(id){
     toast("ההפקה בוטלה — "+d.assigneeName+" חזרה לראש התור ↩️");
   });
 }
+function setQuota(id,val){ db.ref("config/backoffice/"+id+"/quota").set(parseInt(val,10)||1); }
+function moveOrder(id,dir){
+  const ord=effectiveOrder(); const i=ord.indexOf(id), j=i+dir;
+  if(i<0||j<0||j>=ord.length) return;
+  ord[i]=ord[j]; ord[j]=id;
+  db.ref("config/order").set(ord);
+}
+function resetRound(){
+  if(confirm("להתחיל את הסבב מחדש? הראשונה ברשימת הסדר תהיה הבאה בתור."))
+    db.ref("config/roundStart").set(firebase.database.ServerValue.TIMESTAMP).then(function(){ toast("הסבב אופס — מתחילים מהראשונה 🔄"); });
+}
 function addBO(){
   const inp=document.getElementById("newBOName"), name=inp.value.trim();
   if(!name) return;
-  db.ref("config/backoffice").push({name, color:PALETTE[Object.keys(backoffice).length%PALETTE.length], unavailable:""});
+  const ref=db.ref("config/backoffice").push({name, color:PALETTE[Object.keys(backoffice).length%PALETTE.length], unavailable:"", quota:1});
+  db.ref("config/order").set(effectiveOrder().concat([ref.key]));
   inp.value="";
 }
 function addMk(){
@@ -592,7 +660,11 @@ function resetDeals(){
     toast("כל ההפקות נמחקו 🧹");
   });
 }
-function delBO(id){ if(confirm("למחוק את "+backoffice[id].name+"?")) db.ref("config/backoffice/"+id).remove(); }
+function delBO(id){
+  if(!confirm("למחוק את "+backoffice[id].name+"?")) return;
+  db.ref("config/backoffice/"+id).remove();
+  db.ref("config/order").set(effectiveOrder().filter(function(x){ return x!==id; }));
+}
 function delMk(id){ if(confirm("למחוק את "+marketers[id].name+"?")) db.ref("config/marketers/"+id).remove(); }
 
 /* ---------- כללי ---------- */
