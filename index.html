@@ -272,9 +272,20 @@ window.addEventListener("error", function(e){
         </div>
       </div>
       <div class="card">
-        <h2>🔁 סדר התור להיום</h2>
+        <h2>🎯 שליטה בתור עכשיו</h2>
+        <div id="adminNextBox" style="font-size:.9rem;margin-bottom:10px;"></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn secondary" style="margin-top:0;flex:1;" onclick="skipNext()">⏭️ דלג עליה</button>
+          <button class="btn secondary" style="margin-top:0;flex:1;" id="clearForceBtn" onclick="clearForce()">🔓 חזרה לאוטומטי</button>
+        </div>
+        <div style="font-size:.78rem;color:var(--muted);margin-top:8px;">
+          לקבוע ידנית מי הבאה — לחצי ⭐ ליד השם ברשימת הסדר למטה. הקביעה תופסת עד שהיא מקבלת הפקה, ואז התור ממשיך ממנה הלאה.
+        </div>
+      </div>
+      <div class="card">
+        <h2>🔁 סדר התור</h2>
         <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px;">
-          הסבב מתקדם לפי הסדר הזה (מי שלא זמינה — מדולגת). הראשונה ברשימה מתחילה את הסבב.
+          הסבב מתקדם לפי הסדר הזה (חסומות מדולגות). אפשר לשנות בכל רגע — גם באמצע היום.
         </div>
         <div id="adminOrder"></div>
         <button class="btn secondary" onclick="resetRound()">🔄 אפס את הסבב מהתחלה</button>
@@ -451,6 +462,30 @@ function nextInfo(){
 }
 function nextInLineId(){ const n=nextInfo(); return n?n.id:null; }
 
+/* שליטה ידנית של המנהלת בתור */
+function forceNext(id){
+  if(!backoffice[id]) return;
+  if(!isAvailable(backoffice[id])){ toast(backoffice[id].name+" חסומה — שחררי אותה קודם"); return; }
+  db.ref("queueOverride").set({id:id, name:backoffice[id].name}).then(function(){ toast(backoffice[id].name+" נקבעה כהבאה בתור ⭐"); });
+}
+function skipNext(){
+  const ni=nextInfo(); if(!ni) return;
+  const cur=ni.id;
+  if(!confirm("לדלג על "+backoffice[cur].name+"? התור יעבור לזו שאחריה ברשימה.")) return;
+  /* לדלג = להצביע על הבאה בסדר אחרי המדולגת (ולדלג גם על חסומות) */
+  const ord=effectiveOrder(); const li=ord.indexOf(cur);
+  let target=null;
+  for(let k=1;k<=ord.length;k++){
+    const cand=ord[(li+k)%ord.length];
+    if(cand!==cur && isAvailable(backoffice[cand])){ target=cand; break; }
+  }
+  if(!target){ toast("אין על מי לעבור — כל השאר חסומות"); return; }
+  db.ref("queueOverride").set({id:target, name:backoffice[target].name}).then(function(){ toast("דילגנו על "+backoffice[cur].name+" — הבאה: "+backoffice[target].name); });
+}
+function clearForce(){
+  db.ref("queueOverride").remove().then(function(){ toast("התור חזר לסדר האוטומטי"); });
+}
+
 /* ---------- הסקר ---------- */
 function renderPoll(){
   const st=boStats(), ni=nextInfo(), next=ni?ni.id:null;
@@ -621,13 +656,20 @@ function renderAdmin(){
     `<div class="admin-row"><div class="name">${esc(m.name)}</div>
      <button class="mini-btn danger" onclick="delMk('${id}')">מחיקה</button></div>`
   ).join("")||'<div class="empty" style="padding:10px;">אין עדיין — מוסיפים למטה</div>';
-  const ord=effectiveOrder();
+  const ord=effectiveOrder(), ni=nextInfo(), nextId=ni?ni.id:null;
+  const forced = !!(queueOverride && queueOverride.id && backoffice[queueOverride.id]);
+  document.getElementById("adminNextBox").innerHTML = ni
+    ? `הבאה בתור: <b style="font-size:1.05rem;">⭐ ${esc(backoffice[ni.id].name)}</b>${ni.quota>1?` <span style="color:var(--muted);">(${ni.pos} מתוך ${ni.quota})</span>`:""}`
+      + (forced ? ' <span style="color:#d97706;font-size:.8rem;">· נקבע ידנית</span>' : ' <span style="color:var(--muted);font-size:.8rem;">· אוטומטי</span>')
+    : '<span style="color:var(--muted);">אין אף אחת זמינה</span>';
+  document.getElementById("clearForceBtn").disabled = !forced;
   document.getElementById("adminOrder").innerHTML = ord.length ? ord.map((id,i)=>{
-    const bo=backoffice[id];
-    return `<div class="admin-row">
+    const bo=backoffice[id], isNext=id===nextId, avail=isAvailable(bo);
+    return `<div class="admin-row" ${isNext?'style="background:var(--primary-soft);border-radius:8px;padding-inline:6px;"':""}>
       <span style="color:var(--muted);font-size:.8rem;min-width:16px;">${i+1}.</span>
       <div class="mini-avatar" style="background:${bo.color}">${esc(bo.name.slice(0,2))}</div>
-      <div class="name">${esc(bo.name)}${isAvailable(bo)?"":' <span style="color:#dc2626;font-size:.75rem;">(חסומה)</span>'}</div>
+      <div class="name">${esc(bo.name)}${isNext?' ⭐':""}${avail?"":' <span style="color:#dc2626;font-size:.75rem;">(חסומה)</span>'}</div>
+      <button class="mini-btn" title="קבעי כהבאה בתור" ${(isNext||!avail)?"disabled":""} onclick="forceNext('${id}')">⭐</button>
       <button class="mini-btn" ${i===0?"disabled":""} onclick="moveOrder('${id}',-1)">⬆️</button>
       <button class="mini-btn" ${i===ord.length-1?"disabled":""} onclick="moveOrder('${id}',1)">⬇️</button>
     </div>`;
