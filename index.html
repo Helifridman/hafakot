@@ -236,11 +236,20 @@ window.addEventListener("error", function(e){
         <button class="on" data-scope="day" onclick="setScope('day')">היום</button>
         <button data-scope="week" onclick="setScope('week')">השבוע</button>
         <button data-scope="month" onclick="setScope('month')">החודש</button>
+        <button data-scope="date" onclick="setScope('date')">📅 תאריך</button>
+      </div>
+      <div id="dateRow" style="display:none;margin-bottom:12px;">
+        <input type="date" id="datePick" onchange="renderSummary()"
+          style="width:100%;padding:11px;border:1px solid var(--border);border-radius:10px;font-size:1rem;background:#fff;color:var(--text);">
       </div>
       <h2>🗂️ הפקות לפי בק אופיס</h2>
       <div id="sumBO"></div>
       <h2 style="margin-top:18px;">💪 לפי משווק</h2>
       <div id="sumMk"></div>
+      <div id="sumActivityWrap" style="display:none;">
+        <h2 style="margin-top:18px;">📜 הפעילות באותו יום</h2>
+        <div id="sumActivity"></div>
+      </div>
       <button class="btn" onclick="copySummary()">📋 העתק סיכום לקבוצה</button>
       <button class="btn secondary" onclick="shareWhatsapp()">💬 שתף בווצאפ</button>
     </div>
@@ -588,18 +597,37 @@ function renderToday(){
 function setScope(s){
   scope=s;
   document.querySelectorAll(".scope-tabs button").forEach(b=>b.classList.toggle("on",b.dataset.scope===s));
+  document.getElementById("dateRow").style.display = s==="date" ? "block" : "none";
+  if(s==="date" && !document.getElementById("datePick").value)
+    document.getElementById("datePick").value = todayKey();
   renderSummary();
 }
 function scopeStart(){ return scope==="day"?effDayStart():scope==="week"?startOfWeek():startOfMonth(); }
-const scopeName=()=>({day:"היום",week:"השבוע",month:"החודש"})[scope];
+function pickedRange(){
+  const v=document.getElementById("datePick").value;
+  if(!v) return null;
+  const p=v.split("-");
+  const d=new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10));
+  return {from:d.getTime(), to:d.getTime()+86400000};
+}
+function scopeName(){
+  if(scope==="date"){ const r=pickedRange(); return r?fmtDate(r.from):"בחרי תאריך"; }
+  return {day:"היום",week:"השבוע",month:"החודש"}[scope];
+}
 function summaryData(){
-  const from=scopeStart(), list=dealList().filter(d=>d.ts>=from);
+  let from, to=Infinity;
+  if(scope==="date"){
+    const r=pickedRange();
+    if(!r) return {bo:{},mk:{},total:0,list:[]};
+    from=r.from; to=r.to;
+  } else from=scopeStart();
+  const list=dealList().filter(d=>d.ts>=from && d.ts<to);
   const bo={}, mk={};
   list.forEach(d=>{
     bo[d.assigneeName]=(bo[d.assigneeName]||0)+1;
     mk[d.marketer]=(mk[d.marketer]||0)+1;
   });
-  return {bo,mk,total:list.length};
+  return {bo,mk,total:list.length,list};
 }
 function tableHTML(obj){
   const rows=Object.entries(obj).sort((a,b)=>b[1]-a[1]);
@@ -608,13 +636,27 @@ function tableHTML(obj){
     rows.map(([n,c])=>`<tr><td>${esc(n)}</td><td class="num">${c}</td></tr>`).join("")+"</table>";
 }
 function renderSummary(){
-  const {bo,mk}=summaryData();
-  document.getElementById("sumBO").innerHTML=tableHTML(bo);
-  document.getElementById("sumMk").innerHTML=tableHTML(mk);
+  const data=summaryData();
+  document.getElementById("sumBO").innerHTML=tableHTML(data.bo);
+  document.getElementById("sumMk").innerHTML=tableHTML(data.mk);
+  const wrap=document.getElementById("sumActivityWrap");
+  if(scope==="date"){
+    wrap.style.display="block";
+    document.getElementById("sumActivity").innerHTML = data.list.length ? data.list.slice().reverse().map(d=>{
+      const color=(backoffice[d.assigneeId]||{}).color||"#9ca3af";
+      return `<div class="today-row">
+        <span class="today-time">${fmtTime(d.ts)}</span>
+        <span>${esc(d.marketer)}</span> ➤
+        <span class="today-dot" style="background:${color}"></span><b>${esc(d.assigneeName)}</b>
+      </div>`;
+    }).join("") : '<div class="empty">אין פעילות בתאריך הזה</div>';
+  } else wrap.style.display="none";
 }
 function summaryText(){
   const {bo,mk,total}=summaryData();
-  let t=`📊 סיכום הפקות — ${scopeName()} (${fmtDate(Date.now())})\n`;
+  let t = scope==="date"
+    ? `📊 סיכום הפקות — ${scopeName()}\n`
+    : `📊 סיכום הפקות — ${scopeName()} (${fmtDate(Date.now())})\n`;
   t+=`סה"כ: ${total} הפקות\n\n🗂️ בק אופיס:\n`;
   t+=Object.entries(bo).sort((a,b)=>b[1]-a[1]).map(([n,c])=>`• ${n} — ${c}`).join("\n")||"• —";
   t+=`\n\n💪 משווקים:\n`;
