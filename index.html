@@ -236,11 +236,20 @@ window.addEventListener("error", function(e){
         <button class="on" data-scope="day" onclick="setScope('day')">היום</button>
         <button data-scope="week" onclick="setScope('week')">השבוע</button>
         <button data-scope="month" onclick="setScope('month')">החודש</button>
+        <button data-scope="date" onclick="setScope('date')">📅 תאריך</button>
+      </div>
+      <div id="dateRow" style="display:none;margin-bottom:12px;">
+        <input type="date" id="datePick" onchange="renderSummary()"
+          style="width:100%;padding:11px;border:1px solid var(--border);border-radius:10px;font-size:1rem;background:#fff;color:var(--text);">
       </div>
       <h2>🗂️ הפקות לפי בק אופיס</h2>
       <div id="sumBO"></div>
       <h2 style="margin-top:18px;">💪 לפי משווק</h2>
       <div id="sumMk"></div>
+      <div id="sumActivityWrap" style="display:none;">
+        <h2 style="margin-top:18px;">📜 הפעילות באותו יום</h2>
+        <div id="sumActivity"></div>
+      </div>
       <button class="btn" onclick="copySummary()">📋 העתק סיכום לקבוצה</button>
       <button class="btn secondary" onclick="shareWhatsapp()">💬 שתף בווצאפ</button>
     </div>
@@ -272,12 +281,31 @@ window.addEventListener("error", function(e){
         </div>
       </div>
       <div class="card">
-        <h2>🔁 סדר התור להיום</h2>
+        <h2>🎯 שליטה בתור עכשיו</h2>
+        <div id="adminNextBox" style="font-size:.9rem;margin-bottom:10px;"></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn secondary" style="margin-top:0;flex:1;" onclick="skipNext()">⏭️ דלג עליה</button>
+          <button class="btn secondary" style="margin-top:0;flex:1;" id="clearForceBtn" onclick="clearForce()">🔓 חזרה לאוטומטי</button>
+        </div>
+        <div style="font-size:.78rem;color:var(--muted);margin-top:8px;">
+          לקבוע ידנית מי הבאה — לחצי ⭐ ליד השם ברשימת הסדר למטה. הקביעה תופסת עד שהיא מקבלת הפקה, ואז התור ממשיך ממנה הלאה.
+        </div>
+      </div>
+      <div class="card">
+        <h2>🔁 סדר התור</h2>
         <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px;">
-          הסבב מתקדם לפי הסדר הזה (מי שלא זמינה — מדולגת). הראשונה ברשימה מתחילה את הסבב.
+          הסבב מתקדם לפי הסדר הזה (חסומות מדולגות). אפשר לשנות בכל רגע — גם באמצע היום.
         </div>
         <div id="adminOrder"></div>
         <button class="btn secondary" onclick="resetRound()">🔄 אפס את הסבב מהתחלה</button>
+      </div>
+      <div class="card">
+        <h2>🌅 סוף יום</h2>
+        <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px;">
+          מכין את המערכת ליום הבא: המונה היומי מתאפס, הסבב חוזר לראשונה ברשימת הסדר,
+          וחסימות של היום נפתחות. אחרי הלחיצה אפשר לחסום מראש מי שלא תהיה מחר.
+        </div>
+        <button class="btn" onclick="nextDay()">🌅 מעבר ליום הבא</button>
       </div>
       <div class="card">
         <h2>↩️ ביטול הפקה</h2>
@@ -333,7 +361,7 @@ const ADMIN_CODE = "1234";   // 🔑 קוד מסך הניהול
 const PALETTE = ["#e74c3c","#3498db","#27ae60","#9b59b6","#f39c12","#16a085","#e91e63","#795548","#607d8b","#ff5722"];
 
 let db=null, marketers={}, backoffice={}, deals={};
-let scope="day", pendingAssignee=null, queueOverride=null, order=[], roundStart=0;
+let scope="day", pendingAssignee=null, queueOverride=null, order=[], roundStart=0, dayStart=0, workDay="";
 
 /* ---------- תאריכים ---------- */
 /* אחסון בטוח — לא מפיל את הדף כשהאחסון חסום (מצב פרטי וכו') */
@@ -347,8 +375,19 @@ function dayKey(ts){ const d=new Date(ts); return d.getFullYear()+"-"+pad(d.getM
 const todayKey = () => dayKey(Date.now());
 function startOfDay(){ const d=new Date(); d.setHours(0,0,0,0); return d.getTime(); }
 function startOfWeek(){ const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-d.getDay()); return d.getTime(); }
-/* חודש עסקי: מתחיל ב-2 לחודש ומסתיים ב-1 לחודש הבא (כולל) */
-function startOfMonth(){ const d=new Date(); d.setHours(0,0,0,0); if(d.getDate()<2) d.setMonth(d.getMonth()-1); d.setDate(2); return d.getTime(); }
+function startOfMonth(){ const d=new Date(); d.setHours(0,0,0,0); d.setDate(1); return d.getTime(); }
+
+/* "יום העבודה" הנוכחי: היום, או מחר אם נלחץ "מעבר ליום הבא" הערב */
+function currentWorkDay(){ const t=todayKey(); return (workDay && workDay>t) ? workDay : t; }
+/* מאיזה רגע נספרות ההפקות של "היום" בתצוגה */
+function effDayStart(){
+  const t=todayKey();
+  if(workDay >= t && dayStart){
+    if(workDay > t) return dayStart;            /* ערב הכנה — היום החדש התחיל ברגע הלחיצה */
+    if(dayKey(dayStart) < t) return dayStart;   /* בוקר אחרי הכנה מהערב — כולל מה שנרשם מאז */
+  }
+  return startOfDay();
+}
 const fmtTime = ts => new Date(ts).toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit"});
 const fmtDate = ts => new Date(ts).toLocaleDateString("he-IL",{day:"numeric",month:"numeric",year:"numeric"});
 
@@ -366,6 +405,8 @@ db.ref("deals").orderByChild("ts").limitToLast(1500).on("value", s => { deals = 
 db.ref("queueOverride").on("value", s => { queueOverride = s.val(); renderAll(); });
 db.ref("config/order").on("value", s => { order = s.val()||[]; renderAll(); });
 db.ref("config/roundStart").on("value", s => { roundStart = s.val()||0; renderAll(); });
+db.ref("config/dayStart").on("value", s => { dayStart = s.val()||0; renderAll(); });
+db.ref("config/workDay").on("value", s => { workDay = s.val()||""; renderAll(); });
 
 /* ---------- ניווט ---------- */
 function switchTab(name){
@@ -384,7 +425,7 @@ function toast(msg){
 /* ---------- חישובים ---------- */
 function dealList(){ return Object.entries(deals).map(([id,d])=>({id,...d})).sort((a,b)=>(a.ts||0)-(b.ts||0)); }
 function boStats(){
-  const list=dealList(), sd=startOfDay();
+  const list=dealList(), sd=effDayStart();
   const st={};
   Object.keys(backoffice).forEach(id => st[id]={day:0,last:0});
   list.forEach(d=>{
@@ -394,7 +435,7 @@ function boStats(){
   });
   return st;
 }
-function isAvailable(bo){ return bo.unavailable !== todayKey(); }
+function isAvailable(bo){ return bo.unavailable !== currentWorkDay(); }
 /* הסדר בפועל: config/order מסונן לקיימות, ומי שחסרה מצטרפת לסוף */
 function effectiveOrder(){
   const ids=(order||[]).filter(id => backoffice[id]);
@@ -409,9 +450,8 @@ function nextInfo(){
     return {id:queueOverride.id, pos:1, quota:(backoffice[queueOverride.id].quota||1)};
   const ord=effectiveOrder();
   if(!ord.length) return null;
-  /* נספרות רק הפקות מאז תחילת הסבב הנוכחי; כל בוקר הסבב מתאפס אוטומטית */
-  const rs=Math.max(roundStart||0, startOfDay());
-  const considered=dealList().filter(d => d.ts>=rs && backoffice[d.assigneeId]);
+  /* נספרות רק הפקות מאז תחילת הסבב הנוכחי */
+  const considered=dealList().filter(d => d.ts>=(roundStart||0) && backoffice[d.assigneeId]);
   let startIdx=0;
   if(considered.length){
     const lastId=considered[considered.length-1].assigneeId;
@@ -430,6 +470,30 @@ function nextInfo(){
   return null;
 }
 function nextInLineId(){ const n=nextInfo(); return n?n.id:null; }
+
+/* שליטה ידנית של המנהלת בתור */
+function forceNext(id){
+  if(!backoffice[id]) return;
+  if(!isAvailable(backoffice[id])){ toast(backoffice[id].name+" חסומה — שחררי אותה קודם"); return; }
+  db.ref("queueOverride").set({id:id, name:backoffice[id].name}).then(function(){ toast(backoffice[id].name+" נקבעה כהבאה בתור ⭐"); });
+}
+function skipNext(){
+  const ni=nextInfo(); if(!ni) return;
+  const cur=ni.id;
+  if(!confirm("לדלג על "+backoffice[cur].name+"? התור יעבור לזו שאחריה ברשימה.")) return;
+  /* לדלג = להצביע על הבאה בסדר אחרי המדולגת (ולדלג גם על חסומות) */
+  const ord=effectiveOrder(); const li=ord.indexOf(cur);
+  let target=null;
+  for(let k=1;k<=ord.length;k++){
+    const cand=ord[(li+k)%ord.length];
+    if(cand!==cur && isAvailable(backoffice[cand])){ target=cand; break; }
+  }
+  if(!target){ toast("אין על מי לעבור — כל השאר חסומות"); return; }
+  db.ref("queueOverride").set({id:target, name:backoffice[target].name}).then(function(){ toast("דילגנו על "+backoffice[cur].name+" — הבאה: "+backoffice[target].name); });
+}
+function clearForce(){
+  db.ref("queueOverride").remove().then(function(){ toast("התור חזר לסדר האוטומטי"); });
+}
 
 /* ---------- הסקר ---------- */
 function renderPoll(){
@@ -477,8 +541,9 @@ function recordDeal(me, id){
 /* ---------- זמינות ---------- */
 function markUnavail(id){
   if(!backoffice[id]) return;
-  if(confirm("לסמן את "+backoffice[id].name+" כלא זמינה היום? (התור ידלג עליה)"))
-    db.ref("config/backoffice/"+id+"/unavailable").set(todayKey());
+  const when = currentWorkDay()>todayKey() ? "מחר" : "היום";
+  if(confirm("לחסום את "+backoffice[id].name+" ל"+when+"? (התור ידלג עליה)"))
+    db.ref("config/backoffice/"+id+"/unavailable").set(currentWorkDay());
 }
 function markAvail(id){
   if(!backoffice[id]) return;
@@ -513,9 +578,10 @@ function renderMe(){
 
 /* ---------- רשימת היום ---------- */
 function renderToday(){
-  const sd=startOfDay();
+  const sd=effDayStart();
   const today=dealList().filter(d=>d.ts>=sd).reverse();
-  document.getElementById("todayTitle").textContent = "ההפקות של היום ("+today.length+") · "+fmtDate(Date.now());
+  const prep = currentWorkDay()>todayKey() ? " · מוכן ליום הבא 🌅" : "";
+  document.getElementById("todayTitle").textContent = "ההפקות של היום ("+today.length+") · "+fmtDate(Date.now())+prep;
   document.getElementById("todayList").innerHTML = today.length ? today.map(d=>{
     const color=(backoffice[d.assigneeId]||{}).color||"#9ca3af";
     return `<div class="today-row">
@@ -531,18 +597,37 @@ function renderToday(){
 function setScope(s){
   scope=s;
   document.querySelectorAll(".scope-tabs button").forEach(b=>b.classList.toggle("on",b.dataset.scope===s));
+  document.getElementById("dateRow").style.display = s==="date" ? "block" : "none";
+  if(s==="date" && !document.getElementById("datePick").value)
+    document.getElementById("datePick").value = todayKey();
   renderSummary();
 }
-function scopeStart(){ return scope==="day"?startOfDay():scope==="week"?startOfWeek():startOfMonth(); }
-const scopeName=()=>({day:"היום",week:"השבוע",month:"החודש"})[scope];
+function scopeStart(){ return scope==="day"?effDayStart():scope==="week"?startOfWeek():startOfMonth(); }
+function pickedRange(){
+  const v=document.getElementById("datePick").value;
+  if(!v) return null;
+  const p=v.split("-");
+  const d=new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10));
+  return {from:d.getTime(), to:d.getTime()+86400000};
+}
+function scopeName(){
+  if(scope==="date"){ const r=pickedRange(); return r?fmtDate(r.from):"בחרי תאריך"; }
+  return {day:"היום",week:"השבוע",month:"החודש"}[scope];
+}
 function summaryData(){
-  const from=scopeStart(), list=dealList().filter(d=>d.ts>=from);
+  let from, to=Infinity;
+  if(scope==="date"){
+    const r=pickedRange();
+    if(!r) return {bo:{},mk:{},total:0,list:[]};
+    from=r.from; to=r.to;
+  } else from=scopeStart();
+  const list=dealList().filter(d=>d.ts>=from && d.ts<to);
   const bo={}, mk={};
   list.forEach(d=>{
     bo[d.assigneeName]=(bo[d.assigneeName]||0)+1;
     mk[d.marketer]=(mk[d.marketer]||0)+1;
   });
-  return {bo,mk,total:list.length};
+  return {bo,mk,total:list.length,list};
 }
 function tableHTML(obj){
   const rows=Object.entries(obj).sort((a,b)=>b[1]-a[1]);
@@ -551,13 +636,27 @@ function tableHTML(obj){
     rows.map(([n,c])=>`<tr><td>${esc(n)}</td><td class="num">${c}</td></tr>`).join("")+"</table>";
 }
 function renderSummary(){
-  const {bo,mk}=summaryData();
-  document.getElementById("sumBO").innerHTML=tableHTML(bo);
-  document.getElementById("sumMk").innerHTML=tableHTML(mk);
+  const data=summaryData();
+  document.getElementById("sumBO").innerHTML=tableHTML(data.bo);
+  document.getElementById("sumMk").innerHTML=tableHTML(data.mk);
+  const wrap=document.getElementById("sumActivityWrap");
+  if(scope==="date"){
+    wrap.style.display="block";
+    document.getElementById("sumActivity").innerHTML = data.list.length ? data.list.slice().reverse().map(d=>{
+      const color=(backoffice[d.assigneeId]||{}).color||"#9ca3af";
+      return `<div class="today-row">
+        <span class="today-time">${fmtTime(d.ts)}</span>
+        <span>${esc(d.marketer)}</span> ➤
+        <span class="today-dot" style="background:${color}"></span><b>${esc(d.assigneeName)}</b>
+      </div>`;
+    }).join("") : '<div class="empty">אין פעילות בתאריך הזה</div>';
+  } else wrap.style.display="none";
 }
 function summaryText(){
   const {bo,mk,total}=summaryData();
-  let t=`📊 סיכום הפקות — ${scopeName()} (${fmtDate(Date.now())})\n`;
+  let t = scope==="date"
+    ? `📊 סיכום הפקות — ${scopeName()}\n`
+    : `📊 סיכום הפקות — ${scopeName()} (${fmtDate(Date.now())})\n`;
   t+=`סה"כ: ${total} הפקות\n\n🗂️ בק אופיס:\n`;
   t+=Object.entries(bo).sort((a,b)=>b[1]-a[1]).map(([n,c])=>`• ${n} — ${c}`).join("\n")||"• —";
   t+=`\n\n💪 משווקים:\n`;
@@ -592,20 +691,27 @@ function renderAdmin(){
       <div class="mini-avatar" style="background:${bo.color}">${esc(bo.name.slice(0,2))}</div>
       <div class="name">${esc(bo.name)}</div>
       <select class="quota-sel" title="כמה הפקות רצוף לפני שהתור עובר" onchange="setQuota('${id}',this.value)">${[1,2,3,4,5].map(q=>`<option value="${q}" ${q===(bo.quota||1)?"selected":""}>×${q}</option>`).join("")}</select>
-      <button class="mini-btn ${off?'toggled':''}" onclick="${off?`markAvail('${id}')`:`markUnavail('${id}')`}">${off?"🚫 חסומה היום":"זמינה"}</button>
+      <button class="mini-btn ${off?'toggled':''}" onclick="${off?`markAvail('${id}')`:`markUnavail('${id}')`}">${off?"🚫 חסומה":"זמינה"}</button>
       <button class="mini-btn danger" onclick="delBO('${id}')">מחיקה</button></div>`;
   }).join("")||'<div class="empty" style="padding:10px;">אין עדיין — מוסיפים למטה</div>';
   document.getElementById("adminMk").innerHTML=Object.entries(marketers).map(([id,m])=>
     `<div class="admin-row"><div class="name">${esc(m.name)}</div>
      <button class="mini-btn danger" onclick="delMk('${id}')">מחיקה</button></div>`
   ).join("")||'<div class="empty" style="padding:10px;">אין עדיין — מוסיפים למטה</div>';
-  const ord=effectiveOrder();
+  const ord=effectiveOrder(), ni=nextInfo(), nextId=ni?ni.id:null;
+  const forced = !!(queueOverride && queueOverride.id && backoffice[queueOverride.id]);
+  document.getElementById("adminNextBox").innerHTML = ni
+    ? `הבאה בתור: <b style="font-size:1.05rem;">⭐ ${esc(backoffice[ni.id].name)}</b>${ni.quota>1?` <span style="color:var(--muted);">(${ni.pos} מתוך ${ni.quota})</span>`:""}`
+      + (forced ? ' <span style="color:#d97706;font-size:.8rem;">· נקבע ידנית</span>' : ' <span style="color:var(--muted);font-size:.8rem;">· אוטומטי</span>')
+    : '<span style="color:var(--muted);">אין אף אחת זמינה</span>';
+  document.getElementById("clearForceBtn").disabled = !forced;
   document.getElementById("adminOrder").innerHTML = ord.length ? ord.map((id,i)=>{
-    const bo=backoffice[id];
-    return `<div class="admin-row">
+    const bo=backoffice[id], isNext=id===nextId, avail=isAvailable(bo);
+    return `<div class="admin-row" ${isNext?'style="background:var(--primary-soft);border-radius:8px;padding-inline:6px;"':""}>
       <span style="color:var(--muted);font-size:.8rem;min-width:16px;">${i+1}.</span>
       <div class="mini-avatar" style="background:${bo.color}">${esc(bo.name.slice(0,2))}</div>
-      <div class="name">${esc(bo.name)}${isAvailable(bo)?"":' <span style="color:#dc2626;font-size:.75rem;">(חסומה)</span>'}</div>
+      <div class="name">${esc(bo.name)}${isNext?' ⭐':""}${avail?"":' <span style="color:#dc2626;font-size:.75rem;">(חסומה)</span>'}</div>
+      <button class="mini-btn" title="קבעי כהבאה בתור" ${(isNext||!avail)?"disabled":""} onclick="forceNext('${id}')">⭐</button>
       <button class="mini-btn" ${i===0?"disabled":""} onclick="moveOrder('${id}',-1)">⬆️</button>
       <button class="mini-btn" ${i===ord.length-1?"disabled":""} onclick="moveOrder('${id}',1)">⬇️</button>
     </div>`;
@@ -636,6 +742,15 @@ function moveOrder(id,dir){
   if(i<0||j<0||j>=ord.length) return;
   ord[i]=ord[j]; ord[j]=id;
   db.ref("config/order").set(ord);
+}
+function nextDay(){
+  if(!confirm("לעבור ליום הבא? המונה היומי יתאפס, הסבב יתחיל מהראשונה ברשימה, וחסימות של היום ייפתחו.")) return;
+  const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+1);
+  db.ref("config/workDay").set(dayKey(d.getTime()));
+  db.ref("config/dayStart").set(firebase.database.ServerValue.TIMESTAMP);
+  db.ref("config/roundStart").set(firebase.database.ServerValue.TIMESTAMP);
+  db.ref("queueOverride").remove();
+  toast("היום הבא מוכן 🌅 הסבב יתחיל מהראשונה ברשימה");
 }
 function resetRound(){
   if(confirm("להתחיל את הסבב מחדש? הראשונה ברשימת הסדר תהיה הבאה בתור."))
