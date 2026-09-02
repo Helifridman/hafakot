@@ -375,7 +375,8 @@ function dayKey(ts){ const d=new Date(ts); return d.getFullYear()+"-"+pad(d.getM
 const todayKey = () => dayKey(Date.now());
 function startOfDay(){ const d=new Date(); d.setHours(0,0,0,0); return d.getTime(); }
 function startOfWeek(){ const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-d.getDay()); return d.getTime(); }
-function startOfMonth(){ const d=new Date(); d.setHours(0,0,0,0); d.setDate(1); return d.getTime(); }
+/* חודש עסקי: מתחיל ב-2 לחודש ומסתיים ב-1 לחודש הבא (כולל) */
+function startOfMonth(){ const d=new Date(); d.setHours(0,0,0,0); if(d.getDate()<2) d.setMonth(d.getMonth()-1); d.setDate(2); return d.getTime(); }
 
 /* "יום העבודה" הנוכחי: היום, או מחר אם נלחץ "מעבר ליום הבא" הערב */
 function currentWorkDay(){ const t=todayKey(); return (workDay && workDay>t) ? workDay : t; }
@@ -450,8 +451,9 @@ function nextInfo(){
     return {id:queueOverride.id, pos:1, quota:(backoffice[queueOverride.id].quota||1)};
   const ord=effectiveOrder();
   if(!ord.length) return null;
-  /* נספרות רק הפקות מאז תחילת הסבב הנוכחי */
-  const considered=dealList().filter(d => d.ts>=(roundStart||0) && backoffice[d.assigneeId]);
+  /* נספרות רק הפקות מאז תחילת הסבב הנוכחי; כל בוקר הסבב מתאפס אוטומטית (תואם גם ל"מעבר ליום הבא") */
+  const rs=Math.max(roundStart||0, effDayStart());
+  const considered=dealList().filter(d => d.ts>=rs && backoffice[d.assigneeId]);
   let startIdx=0;
   if(considered.length){
     const lastId=considered[considered.length-1].assigneeId;
