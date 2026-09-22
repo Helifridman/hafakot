@@ -375,8 +375,13 @@ function dayKey(ts){ const d=new Date(ts); return d.getFullYear()+"-"+pad(d.getM
 const todayKey = () => dayKey(Date.now());
 function startOfDay(){ const d=new Date(); d.setHours(0,0,0,0); return d.getTime(); }
 function startOfWeek(){ const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-d.getDay()); return d.getTime(); }
-/* חודש עסקי: מתחיל ב-2 לחודש ומסתיים ב-1 לחודש הבא (כולל) */
-function startOfMonth(){ const d=new Date(); d.setHours(0,0,0,0); if(d.getDate()<2) d.setMonth(d.getMonth()-1); d.setDate(2); return d.getTime(); }
+/* "חודש" עסקי: מה-2 בחודש עד ה-1 בחודש העוקב (כולל). ב-1 בחודש עדיין נמצאים במחזור הקודם */
+function startOfMonth(){
+  const d=new Date(); d.setHours(0,0,0,0);
+  if(d.getDate() < 2) d.setMonth(d.getMonth()-1);
+  d.setDate(2);
+  return d.getTime();
+}
 
 /* "יום העבודה" הנוכחי: היום, או מחר אם נלחץ "מעבר ליום הבא" הערב */
 function currentWorkDay(){ const t=todayKey(); return (workDay && workDay>t) ? workDay : t; }
@@ -451,9 +456,8 @@ function nextInfo(){
     return {id:queueOverride.id, pos:1, quota:(backoffice[queueOverride.id].quota||1)};
   const ord=effectiveOrder();
   if(!ord.length) return null;
-  /* נספרות רק הפקות מאז תחילת הסבב הנוכחי; כל בוקר הסבב מתאפס אוטומטית (תואם גם ל"מעבר ליום הבא") */
-  const rs=Math.max(roundStart||0, effDayStart());
-  const considered=dealList().filter(d => d.ts>=rs && backoffice[d.assigneeId]);
+  /* נספרות רק הפקות מאז תחילת הסבב הנוכחי */
+  const considered=dealList().filter(d => d.ts>=(roundStart||0) && backoffice[d.assigneeId]);
   let startIdx=0;
   if(considered.length){
     const lastId=considered[considered.length-1].assigneeId;
@@ -494,7 +498,10 @@ function skipNext(){
   db.ref("queueOverride").set({id:target, name:backoffice[target].name}).then(function(){ toast("דילגנו על "+backoffice[cur].name+" — הבאה: "+backoffice[target].name); });
 }
 function clearForce(){
-  db.ref("queueOverride").remove().then(function(){ toast("התור חזר לסדר האוטומטי"); });
+  const hadForce = !!(queueOverride && queueOverride.id && backoffice[queueOverride.id]);
+  db.ref("queueOverride").remove().then(function(){
+    toast(hadForce ? "התור חזר לסדר האוטומטי 🔓" : "התור כבר במצב אוטומטי ✓");
+  });
 }
 
 /* ---------- הסקר ---------- */
@@ -521,7 +528,29 @@ function renderPoll(){
       <div class="poll-count">${st[id].day}</div>
     </div>`;
   }).join("");
-  document.getElementById("pollList").innerHTML = html || '<div class="empty">אין שמות עדיין — מוסיפים במסך ⚙️ ניהול</div>';
+  const selfCount = dealList().filter(d => d.ts>=effDayStart() && d.assigneeId==="__self__").length;
+  const selfOpt = `<div class="poll-opt" style="border-style:dashed;" onclick="selfTap()">
+      <div class="poll-avatar" style="background:#64748b">🙋</div>
+      <div class="poll-name">הפקתי לעצמי</div>
+      <span class="unavail-txt">לא נכנס לתור</span>
+      <div class="poll-count" style="background:#64748b">${selfCount}</div>
+    </div>`;
+  document.getElementById("pollList").innerHTML = entries.length ? html + selfOpt : '<div class="empty">אין שמות עדיין — מוסיפים במסך ⚙️ ניהול</div>';
+}
+
+function selfTap(){
+  const me=lsGet("myName");
+  if(!me){ openNameModal("__self__"); return; }
+  if(confirm("לרשום הפקה עצמית? (לא נספרת בתור של הבק אופיס)")) recordSelf(me);
+}
+function recordSelf(me){
+  db.ref("deals").push({
+    marketer:me, assigneeId:"__self__", assigneeName:"הפקה עצמית", selfMade:true,
+    ts:firebase.database.ServerValue.TIMESTAMP
+  });
+  toast("🙋 נרשמה הפקה עצמית");
+  const msg="🎉 "+me+" סגר/ה עסקה! (הפקה עצמית)";
+  window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank");
 }
 
 function pollTap(id){
@@ -531,13 +560,17 @@ function pollTap(id){
   if(confirm("להעביר הפקה ל"+backoffice[id].name+"?")) recordDeal(me, id);
 }
 function recordDeal(me, id){
+  const boName=backoffice[id].name;
   db.ref("deals").push({
-    marketer:me, assigneeId:id, assigneeName:backoffice[id].name,
+    marketer:me, assigneeId:id, assigneeName:boName,
     ts:firebase.database.ServerValue.TIMESTAMP
   });
   /* קיבלה הפקה — הקפיצה לראש התור מתבטלת */
   if(queueOverride && queueOverride.id===id) db.ref("queueOverride").remove();
-  toast("🎉 נרשם! ההפקה עברה ל"+backoffice[id].name);
+  toast("🎉 נרשם! ההפקה עברה ל"+boName);
+  /* פתיחת ווצאפ עם הודעה מוכנה לקבוצה — נשאר רק לבחור קבוצה ולשלוח */
+  const msg="🎉 "+me+" סגר/ה עסקה! ההפקה עברה ל"+boName;
+  window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank");
 }
 
 /* ---------- זמינות ---------- */
@@ -571,7 +604,9 @@ function pickName(name){
   renderMe();
   if(pendingAssignee){
     const id=pendingAssignee; pendingAssignee=null;
-    if(confirm("להעביר הפקה ל"+backoffice[id].name+"?")) recordDeal(name, id);
+    if(id==="__self__"){
+      if(confirm("לרשום הפקה עצמית? (לא נספרת בתור של הבק אופיס)")) recordSelf(name);
+    } else if(backoffice[id] && confirm("להעביר הפקה ל"+backoffice[id].name+"?")) recordDeal(name, id);
   }
 }
 function renderMe(){
@@ -706,7 +741,7 @@ function renderAdmin(){
     ? `הבאה בתור: <b style="font-size:1.05rem;">⭐ ${esc(backoffice[ni.id].name)}</b>${ni.quota>1?` <span style="color:var(--muted);">(${ni.pos} מתוך ${ni.quota})</span>`:""}`
       + (forced ? ' <span style="color:#d97706;font-size:.8rem;">· נקבע ידנית</span>' : ' <span style="color:var(--muted);font-size:.8rem;">· אוטומטי</span>')
     : '<span style="color:var(--muted);">אין אף אחת זמינה</span>';
-  document.getElementById("clearForceBtn").disabled = !forced;
+  /* הכפתור תמיד פעיל — נותן משוב גם כשאין קביעה ידנית */
   document.getElementById("adminOrder").innerHTML = ord.length ? ord.map((id,i)=>{
     const bo=backoffice[id], isNext=id===nextId, avail=isAvailable(bo);
     return `<div class="admin-row" ${isNext?'style="background:var(--primary-soft);border-radius:8px;padding-inline:6px;"':""}>
@@ -733,9 +768,11 @@ function delDeal(id){
   const d=deals[id]; if(!d) return;
   if(!confirm("לבטל את ההפקה של "+d.marketer+" שהועברה ל"+d.assigneeName+"?")) return;
   db.ref("deals/"+id).remove().then(function(){
-    /* מי שבוטלה לה ההפקה חוזרת להיות הבאה בתור */
-    db.ref("queueOverride").set({id:d.assigneeId, name:d.assigneeName});
-    toast("ההפקה בוטלה — "+d.assigneeName+" חזרה לראש התור ↩️");
+    /* מי שבוטלה לה ההפקה חוזרת להיות הבאה בתור (לא רלוונטי להפקה עצמית) */
+    if(backoffice[d.assigneeId]){
+      db.ref("queueOverride").set({id:d.assigneeId, name:d.assigneeName});
+      toast("ההפקה בוטלה — "+d.assigneeName+" חזרה לראש התור ↩️");
+    } else toast("ההפקה העצמית בוטלה ↩️");
   });
 }
 function setQuota(id,val){ db.ref("config/backoffice/"+id+"/quota").set(parseInt(val,10)||1); }
