@@ -549,8 +549,6 @@ function recordSelf(me){
     ts:firebase.database.ServerValue.TIMESTAMP
   });
   toast("🙋 נרשמה הפקה עצמית");
-  const msg="🎉 "+me+" סגר/ה עסקה! (הפקה עצמית)";
-  window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank");
 }
 
 function pollTap(id){
@@ -568,9 +566,6 @@ function recordDeal(me, id){
   /* קיבלה הפקה — הקפיצה לראש התור מתבטלת */
   if(queueOverride && queueOverride.id===id) db.ref("queueOverride").remove();
   toast("🎉 נרשם! ההפקה עברה ל"+boName);
-  /* פתיחת ווצאפ עם הודעה מוכנה לקבוצה — נשאר רק לבחור קבוצה ולשלוח */
-  const msg="🎉 "+me+" סגר/ה עסקה! ההפקה עברה ל"+boName;
-  window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank");
 }
 
 /* ---------- זמינות ---------- */
