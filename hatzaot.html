@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ניתוב הצעות</title>
+<style>
+  :root{
+    --bg:#faf7f0; --card:#ffffff; --text:#1c1917; --muted:#7a716a;
+    --primary:#b91c1c; --primary-soft:#f8efdc; --green:#16a34a;
+    --gold:#d4af37; --black:#171412;
+    --border:#e8dfcc; --radius:14px; --shadow:0 1px 3px rgba(40,30,10,.1);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0;}
+  body{
+    font-family:-apple-system,"Segoe UI",Roboto,"Heebo",Arial,sans-serif;
+    background:var(--bg); color:var(--text); padding-bottom:70px;
+  }
+  header{
+    position:sticky; top:0; z-index:20; background:var(--black); color:#f5e9c9;
+    padding:12px 16px; display:flex; align-items:center; justify-content:space-between;
+    box-shadow:var(--shadow); border-bottom:3px solid var(--gold);
+  }
+  header h1{font-size:1.1rem; margin:0; font-weight:700; letter-spacing:.3px;}
+  .conn-dot{width:10px; height:10px; border-radius:50%; background:#f87171; display:inline-block;}
+  .conn-dot.online{background:#4ade80;}
+
+  #offlineBanner{
+    display:none; background:#fef3c7; color:#92400e; padding:9px 14px;
+    font-size:.85rem; text-align:center; border-bottom:1px solid #fde68a;
+  }
+  #offlineBanner.show{display:block;}
+
+  main{max-width:560px; margin:0 auto; padding:12px;}
+  section.tab{display:none;}
+  section.tab.active{display:block;}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+    box-shadow:var(--shadow); padding:14px 16px; margin-bottom:12px;
+  }
+  .card h2{margin:0 0 12px; font-size:1.05rem;}
+  .card h3{margin:0 0 10px; font-size:.95rem; color:var(--muted); font-weight:600;}
+
+  .me-row{
+    display:flex; align-items:center; justify-content:space-between; padding:10px 16px;
+    font-size:.9rem; color:var(--muted);
+  }
+  .me-row b{color:var(--text);}
+  .me-change{
+    border:none; background:none; color:var(--primary); font-size:.85rem; cursor:pointer;
+    font-weight:600; padding:4px;
+  }
+
+  /* ===== poll options ===== */
+  .poll-opt{
+    position:relative; display:flex; align-items:center; gap:10px;
+    border:1.5px solid var(--border); border-radius:12px; margin-bottom:10px;
+    padding:16px 14px; cursor:pointer; background:#fff; overflow:hidden;
+  }
+  .poll-opt:active{transform:scale(.98);}
+  .poll-fill{
+    position:absolute; top:0; bottom:0; right:0; background:var(--primary-soft);
+    z-index:0; border-radius:0; transition:width .3s;
+  }
+  .poll-opt > *:not(.poll-fill){position:relative; z-index:1;}
+  .poll-avatar{
+    width:40px; height:40px; border-radius:50%; color:#fff; display:flex; align-items:center;
+    justify-content:center; font-weight:700; flex-shrink:0; font-size:1rem;
+  }
+  .poll-name{flex:1; font-weight:700; font-size:1.05rem;}
+  .poll-count{
+    min-width:34px; height:34px; border-radius:50%; background:var(--primary); color:#fff;
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:.95rem;
+    padding:0 6px;
+  }
+  .next-badge{
+    background:var(--gold); color:#271c05; font-size:.7rem; padding:3px 8px; border-radius:99px;
+    font-weight:700; white-space:nowrap; box-shadow:0 1px 2px rgba(120,90,10,.35);
+  }
+  .poll-opt.unavail{opacity:.5; background:#f3f4f6;}
+  .poll-opt.unavail .poll-count{background:#9ca3af;}
+  .unavail-txt{font-size:.75rem; color:var(--muted); white-space:nowrap;}
+  .avail-btn{
+    border:none; background:none; font-size:1.05rem; cursor:pointer; padding:6px; line-height:1;
+    flex-shrink:0; opacity:.6;
+  }
+
+  /* ===== today's list ===== */
+  .today-row{
+    display:flex; align-items:center; gap:8px; padding:8px 2px; font-size:.9rem;
+    border-bottom:1px solid var(--border);
+  }
+  .today-row:last-child{border-bottom:none;}
+  .today-time{color:var(--muted); font-size:.78rem; white-space:nowrap;}
+  .cancel-x{
+    border:1px solid #fecaca; background:#fff; color:#dc2626; font-size:.75rem; cursor:pointer;
+    padding:4px 10px; border-radius:99px; margin-right:auto; white-space:nowrap;
+  }
+  .today-dot{width:10px; height:10px; border-radius:50%; flex-shrink:0;}
+  .empty{text-align:center; color:var(--muted); padding:24px 10px; font-size:.92rem;}
+
+  /* ===== name modal ===== */
+  #nameModal{
+    position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:60; display:none;
+    align-items:center; justify-content:center; padding:20px;
+  }
+  #nameModal.show{display:flex;}
+  .modal-card{
+    background:#fff; border-radius:16px; padding:20px; width:100%; max-width:400px;
+    max-height:80vh; overflow:auto;
+  }
+  .modal-card h2{margin:0 0 14px; font-size:1.05rem; text-align:center;}
+  .name-btn{
+    display:block; width:100%; padding:13px; margin-bottom:8px; border:1.5px solid var(--border);
+    border-radius:12px; background:#fff; font-size:1rem; font-weight:600; cursor:pointer; color:var(--text);
+  }
+  .name-btn:active{background:var(--primary-soft);}
+  .modal-cancel{
+    display:block; width:100%; padding:10px; border:none; background:none; color:var(--muted);
+    font-size:.9rem; cursor:pointer; margin-top:4px;
+  }
+
+  /* ===== summary ===== */
+  .scope-tabs{display:flex; gap:6px; margin-bottom:12px;}
+  .scope-tabs button{
+    flex:1; padding:8px; border-radius:99px; border:1.5px solid var(--border); background:#fff;
+    font-size:.88rem; cursor:pointer; color:var(--text);
+  }
+  .scope-tabs button.on{background:var(--primary); border-color:var(--primary); color:#fff; font-weight:700;}
+  table.sum{width:100%; border-collapse:collapse; font-size:.92rem;}
+  table.sum th,table.sum td{padding:8px 6px; text-align:right; border-bottom:1px solid var(--border);}
+  table.sum th{color:var(--muted); font-size:.8rem; font-weight:600;}
+  table.sum td.num{font-weight:700;}
+  .btn{
+    display:block; width:100%; padding:14px; font-size:1rem; font-weight:700; border:none;
+    border-radius:12px; background:var(--primary); color:#fff; cursor:pointer; margin-top:12px;
+  }
+  .btn.secondary{background:#fff; color:var(--primary); border:1.5px solid var(--primary);}
+
+  /* ===== admin ===== */
+  .admin-row{display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--border);}
+  .admin-row:last-child{border-bottom:none;}
+  .admin-row .name{flex:1; font-weight:600;}
+  .mini-btn{
+    border:1.5px solid var(--border); background:#fff; border-radius:8px; padding:6px 10px;
+    font-size:.78rem; cursor:pointer; color:var(--muted); white-space:nowrap;
+  }
+  .mini-btn.danger{color:#dc2626; border-color:#fecaca;}
+  .mini-btn.toggled{background:#fee2e2; border-color:#dc2626; color:#dc2626; font-weight:700;}
+  .mini-btn:disabled{opacity:.35; cursor:default;}
+  .quota-sel{
+    border:1.5px solid var(--border); border-radius:8px; padding:5px 4px; font-size:.8rem;
+    background:#fff; color:var(--text); cursor:pointer;
+  }
+  .add-row{display:flex; gap:8px; margin-top:12px;}
+  .add-row input{
+    flex:1; padding:11px; font-size:1rem; border:1px solid var(--border); border-radius:10px;
+  }
+  .add-row button{
+    background:var(--primary); color:#fff; border:none; border-radius:10px; padding:0 18px;
+    font-size:1.2rem; cursor:pointer;
+  }
+  input[type=password]{
+    width:100%; padding:12px; font-size:1rem; border:1px solid var(--border); border-radius:10px;
+  }
+  label.fld{display:block; font-size:.85rem; color:var(--muted); margin:10px 0 6px;}
+  .mini-avatar{
+    width:30px; height:30px; border-radius:50%; color:#fff; display:flex; align-items:center;
+    justify-content:center; font-weight:700; font-size:.8rem; flex-shrink:0;
+  }
+
+  /* ===== bottom nav ===== */
+  nav.bottom{
+    position:fixed; bottom:0; right:0; left:0; z-index:30; background:#fff;
+    border-top:2px solid var(--gold); display:flex; padding-bottom:env(safe-area-inset-bottom);
+  }
+  nav.bottom button{
+    flex:1; background:none; border:none; padding:8px 4px 7px; font-size:.72rem; color:var(--muted);
+    display:flex; flex-direction:column; align-items:center; gap:2px; cursor:pointer;
+  }
+  nav.bottom button .ico{font-size:1.3rem; line-height:1;}
+  nav.bottom button.on{color:var(--primary); font-weight:700;}
+
+  #toast{
+    position:fixed; bottom:80px; right:50%; transform:translateX(50%); z-index:70;
+    background:#1c2333; color:#fff; padding:11px 20px; border-radius:99px; font-size:.9rem;
+    opacity:0; pointer-events:none; transition:opacity .25s; max-width:90%; text-align:center;
+  }
+  #toast.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<script>
+/* רשת ביטחון: אם יש שגיאת סקריפט (למשל בדפדפן ישן) — להציג הודעה במקום מסך ריק */
+window.addEventListener("error", function(e){
+  var d = document.getElementById("errBanner");
+  if(!d){
+    d = document.createElement("div");
+    d.id = "errBanner";
+    d.style.cssText = "background:#fee2e2;color:#991b1b;padding:10px 14px;font-size:13px;text-align:center;direction:rtl;";
+    document.body.insertBefore(d, document.body.firstChild);
+  }
+  d.textContent = "⚠️ שגיאה בטעינה: " + (e.message || "לא ידועה") + " — נסו לעדכן את הדפדפן או שלחו צילום מסך למנהלת";
+});
+</script>
+
+<header>
+  <h1>📨 ניתוב הצעות</h1>
+  <span class="conn-dot" id="connDot"></span>
+</header>
+<div id="offlineBanner">⚠️ אין חיבור — הסימון יסונכרן כשהאינטרנט יחזור</div>
+
+<main>
+
+  <!-- ============ מסך ראשי (סקר) ============ -->
+  <section class="tab active" id="tab-main">
+    <div class="card">
+      <h2>מקלידה הצעה? סמני לאיזה משווק לנתב 👇</h2>
+      <div id="pollList"></div>
+    </div>
+    <div class="card">
+      <h3 id="todayTitle">ההצעות של היום</h3>
+      <div id="todayList"></div>
+    </div>
+  </section>
+
+  <!-- ============ סיכומים ============ -->
+  <section class="tab" id="tab-summary">
+    <div class="card">
+      <div class="scope-tabs">
+        <button class="on" data-scope="day" onclick="setScope('day')">היום</button>
+        <button data-scope="week" onclick="setScope('week')">השבוע</button>
+        <button data-scope="month" onclick="setScope('month')">החודש</button>
+        <button data-scope="date" onclick="setScope('date')">📅 תאריך</button>
+      </div>
+      <div id="dateRow" style="display:none;margin-bottom:12px;">
+        <input type="date" id="datePick" onchange="renderSummary()"
+          style="width:100%;padding:11px;border:1px solid var(--border);border-radius:10px;font-size:1rem;background:#fff;color:var(--text);">
+      </div>
+      <h2>🗂️ הצעות לפי משווק</h2>
+      <div id="sumBO"></div>
+      <div id="sumActivityWrap" style="display:none;">
+        <h2 style="margin-top:18px;">📜 הפעילות באותו יום</h2>
+        <div id="sumActivity"></div>
+      </div>
+      <button class="btn" onclick="copySummary()">📋 העתק סיכום לקבוצה</button>
+      <button class="btn secondary" onclick="shareWhatsapp()">💬 שתף בווצאפ</button>
+    </div>
+  </section>
+
+  <!-- ============ ניהול ============ -->
+  <section class="tab" id="tab-admin">
+    <div class="card" id="adminLock">
+      <h2>🔒 מסך ניהול</h2>
+      <label class="fld">קוד גישה</label>
+      <input type="password" id="adminCodeInput" inputmode="numeric" placeholder="הקלידי קוד">
+      <button class="btn" onclick="tryAdmin()">כניסה</button>
+    </div>
+    <div id="adminArea" style="display:none;">
+      <div class="card">
+        <h2>🧑‍💼 המשווקים (התור)</h2>
+        <div id="adminBO"></div>
+        <div class="add-row">
+          <input type="text" id="newBOName" placeholder="שם חדש…" maxlength="30">
+          <button onclick="addBO()">＋</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>🎯 שליטה בתור עכשיו</h2>
+        <div id="adminNextBox" style="font-size:.9rem;margin-bottom:10px;"></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn secondary" style="margin-top:0;flex:1;" onclick="skipNext()">⏭️ דלג</button>
+          <button class="btn secondary" style="margin-top:0;flex:1;" id="clearForceBtn" onclick="clearForce()">🔓 חזרה לאוטומטי</button>
+        </div>
+        <div style="font-size:.78rem;color:var(--muted);margin-top:8px;">
+          לקבוע ידנית מי הבא — לחצי ⭐ ליד השם ברשימת הסדר למטה. הקביעה תופסת עד להצעה הבאה שלו, ואז התור ממשיך משם.
+        </div>
+      </div>
+      <div class="card">
+        <h2>🔁 סדר התור</h2>
+        <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px;">
+          הסבב מתקדם לפי הסדר הזה (חסומים מדולגים). אפשר לשנות בכל רגע — גם באמצע היום.
+        </div>
+        <div id="adminOrder"></div>
+        <button class="btn secondary" onclick="resetRound()">🔄 אפס את הסבב מהתחלה</button>
+      </div>
+      <div class="card">
+        <h2>🌅 סוף יום</h2>
+        <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px;">
+          מכין את המערכת ליום הבא: המונה היומי מתאפס, הסבב חוזר לראשונה ברשימת הסדר,
+          וחסימות של היום נפתחות. אחרי הלחיצה אפשר לחסום מראש מי שלא יהיה מחר.
+        </div>
+        <button class="btn" onclick="nextDay()">🌅 מעבר ליום הבא</button>
+      </div>
+      <div class="card">
+        <h2>↩️ ביטול הצעה</h2>
+        <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px;">
+          נרשמה הצעה בטעות? כאן מבטלים — היא תרד מהמונה ומהסיכומים.
+        </div>
+        <div id="adminDeals"></div>
+      </div>
+      <div class="card">
+        <h2>🧹 איפוס</h2>
+        <div style="font-size:.85rem;color:var(--muted);margin-bottom:4px;">
+          מוחק את כל ההצעות שנרשמו (המונים, הפיד והסיכומים יתאפסו). רשימות הצוות נשארות.
+        </div>
+        <button class="btn" style="background:#dc2626;" onclick="resetDeals()">🗑️ מחיקת כל ההצעות</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<nav class="bottom">
+  <button id="nav-main" class="on" onclick="switchTab('main')"><span class="ico">📋</span>ראשי</button>
+  <button id="nav-summary" onclick="switchTab('summary')"><span class="ico">📊</span>סיכומים</button>
+  <button id="nav-admin" onclick="switchTab('admin')"><span class="ico">⚙️</span>ניהול</button>
+</nav>
+
+<div id="toast"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+/* ⚙️ הגדרות Firebase */
+const firebaseConfig = {
+  apiKey:            "AIzaSyBzCy1wrqNgIo4KlE67ctjccFdEEMdvX8w",
+  authDomain:        "hafakot-2fc1f.firebaseapp.com",
+  databaseURL:       "https://hafakot-2fc1f-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId:         "hafakot-2fc1f",
+  storageBucket:     "hafakot-2fc1f.firebasestorage.app",
+  messagingSenderId: "560750358812",
+  appId:             "1:560750358812:web:9a8c93d3392180ca498ad9"
+};
+const ADMIN_CODE = "1234";
+const H = "hatzaot/";   // ענף נתונים נפרד לאפליקציית ניתוב ההצעות   // 🔑 קוד מסך הניהול
+
+const PALETTE = ["#b91c1c","#171412","#d4af37","#8a8178","#7f1d1d","#44403c","#a16207","#565049","#9f1239","#292524"];
+
+let db=null, marketers={}, backoffice={}, deals={};
+let scope="day", pendingAssignee=null, queueOverride=null, order=[], roundStart=0, dayStart=0, workDay="";
+
+/* ---------- תאריכים ---------- */
+/* אחסון בטוח — לא מפיל את הדף כשהאחסון חסום (מצב פרטי וכו') */
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+function ssGet(k){ try{ return sessionStorage.getItem(k); }catch(e){ return null; } }
+function ssSet(k,v){ try{ sessionStorage.setItem(k,v); }catch(e){} }
+
+const pad = n => String(n).padStart(2,"0");
+function dayKey(ts){ const d=new Date(ts); return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); }
+const todayKey = () => dayKey(Date.now());
+function startOfDay(){ const d=new Date(); d.setHours(0,0,0,0); return d.getTime(); }
+function startOfWeek(){ const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-d.getDay()); return d.getTime(); }
+/* "חודש" עסקי: מה-2 בחודש עד ה-1 בחודש העוקב (כולל). ב-1 בחודש עדיין נמצאים במחזור הקודם */
+function startOfMonth(){
+  const d=new Date(); d.setHours(0,0,0,0);
+  if(d.getDate() < 2) d.setMonth(d.getMonth()-1);
+  d.setDate(2);
+  return d.getTime();
+}
+
+/* "יום העבודה" הנוכחי: היום, או מחר אם נלחץ "מעבר ליום הבא" הערב */
+function currentWorkDay(){ const t=todayKey(); return (workDay && workDay>t) ? workDay : t; }
+/* מאיזה רגע נספרות ההצעות של "היום" בתצוגה */
+function effDayStart(){
+  const t=todayKey();
+  if(workDay >= t && dayStart){
+    if(workDay > t) return dayStart;            /* ערב הכנה — היום החדש התחיל ברגע הלחיצה */
+    if(dayKey(dayStart) < t) return dayStart;   /* בוקר אחרי הכנה מהערב — כולל מה שנרשם מאז */
+  }
+  return startOfDay();
+}
+const fmtTime = ts => new Date(ts).toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit"});
+const fmtDate = ts => new Date(ts).toLocaleDateString("he-IL",{day:"numeric",month:"numeric",year:"numeric"});
+
+/* ---------- Firebase ---------- */
+firebase.initializeApp(firebaseConfig);
+db = firebase.database();
+db.ref(".info/connected").on("value", s => {
+  const on = s.val() === true;
+  document.getElementById("connDot").classList.toggle("online", on);
+  document.getElementById("offlineBanner").classList.toggle("show", !on);
+});
+db.ref(H+"config/backoffice").on("value", s => { backoffice = s.val()||{}; renderAll(); });
+db.ref(H+"deals").orderByChild("ts").limitToLast(1500).on("value", s => { deals = s.val()||{}; renderAll(); });
+db.ref(H+"queueOverride").on("value", s => { queueOverride = s.val(); renderAll(); });
+db.ref(H+"config/order").on("value", s => { order = s.val()||[]; renderAll(); });
+db.ref(H+"config/roundStart").on("value", s => { roundStart = s.val()||0; renderAll(); });
+db.ref(H+"config/dayStart").on("value", s => { dayStart = s.val()||0; renderAll(); });
+db.ref(H+"config/workDay").on("value", s => { workDay = s.val()||""; renderAll(); });
+
+/* ---------- ניווט ---------- */
+function switchTab(name){
+  document.querySelectorAll("section.tab").forEach(el=>el.classList.remove("active"));
+  document.querySelectorAll("nav.bottom button").forEach(el=>el.classList.remove("on"));
+  document.getElementById("tab-"+name).classList.add("active");
+  document.getElementById("nav-"+name).classList.add("on");
+  window.scrollTo(0,0);
+}
+function toast(msg){
+  const t=document.getElementById("toast");
+  t.textContent=msg; t.classList.add("show");
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"), 2500);
+}
+
+/* ---------- חישובים ---------- */
+function dealList(){ return Object.entries(deals).map(([id,d])=>({id,...d})).sort((a,b)=>(a.ts||0)-(b.ts||0)); }
+function boStats(){
+  const list=dealList(), sd=effDayStart();
+  const st={};
+  Object.keys(backoffice).forEach(id => st[id]={day:0,last:0});
+  list.forEach(d=>{
+    if(!st[d.assigneeId]) return;
+    if(d.ts>=sd) st[d.assigneeId].day++;
+    if(d.ts>st[d.assigneeId].last) st[d.assigneeId].last=d.ts;
+  });
+  return st;
+}
+function isAvailable(bo){ return bo.unavailable !== currentWorkDay(); }
+/* הסדר בפועל: config/order מסונן לקיימות, ומי שחסרה מצטרפת לסוף */
+function effectiveOrder(){
+  /* מסנן כפילויות — id שמופיע פעמיים ברשימה שבר בעבר את הסבב */
+  const ids=[];
+  (order||[]).forEach(id => { if(backoffice[id] && ids.indexOf(id)===-1) ids.push(id); });
+  Object.keys(backoffice).forEach(id => { if(ids.indexOf(id)===-1) ids.push(id); });
+  return ids;
+}
+
+/* מי הבא בתור + באיזה שלב של המכפיל שלה (pos מתוך quota) */
+function nextInfo(){
+  /* בוטלה הצעה למישהי? היא קופצת לראש התור עד שתקבל הצעה חדשה */
+  if(queueOverride && queueOverride.id && backoffice[queueOverride.id] && isAvailable(backoffice[queueOverride.id]))
+    return {id:queueOverride.id, pos:1, quota:(backoffice[queueOverride.id].quota||1)};
+  const ord=effectiveOrder();
+  if(!ord.length) return null;
+  /* נספרות רק הצעות מאז תחילת הסבב הנוכחי */
+  const considered=dealList().filter(d => d.ts>=(roundStart||0) && backoffice[d.assigneeId]);
+  let startIdx=0;
+  if(considered.length){
+    const lastId=considered[considered.length-1].assigneeId;
+    let streak=0;
+    for(let i=considered.length-1; i>=0 && considered[i].assigneeId===lastId; i--) streak++;
+    const q=backoffice[lastId].quota||1;
+    if(isAvailable(backoffice[lastId]) && streak<q)
+      return {id:lastId, pos:streak+1, quota:q};
+    const li=ord.indexOf(lastId);
+    startIdx = li===-1 ? 0 : (li+1)%ord.length;
+  }
+  for(let k=0;k<ord.length;k++){
+    const id=ord[(startIdx+k)%ord.length];
+    if(isAvailable(backoffice[id])) return {id:id, pos:1, quota:(backoffice[id].quota||1)};
+  }
+  return null;
+}
+function nextInLineId(){ const n=nextInfo(); return n?n.id:null; }
+
+/* שליטה ידנית של המנהלת בתור */
+function forceNext(id){
+  if(!backoffice[id]) return;
+  if(!isAvailable(backoffice[id])){ toast(backoffice[id].name+" חסום/ה — שחררי קודם"); return; }
+  db.ref(H+"queueOverride").set({id:id, name:backoffice[id].name}).then(function(){ toast(backoffice[id].name+" בראש התור עכשיו ⭐"); });
+}
+function skipNext(){
+  const ni=nextInfo(); if(!ni) return;
+  const cur=ni.id;
+  if(!confirm("לדלג על "+backoffice[cur].name+"? התור יעבור הלאה ברשימה.")) return;
+  /* לדלג = להצביע על הבאה בסדר אחרי המדולגת (ולדלג גם על חסומות) */
+  const ord=effectiveOrder(); const li=ord.indexOf(cur);
+  let target=null;
+  for(let k=1;k<=ord.length;k++){
+    const cand=ord[(li+k)%ord.length];
+    if(cand!==cur && isAvailable(backoffice[cand])){ target=cand; break; }
+  }
+  if(!target){ toast("אין על מי לעבור — כל השאר חסומים"); return; }
+  db.ref(H+"queueOverride").set({id:target, name:backoffice[target].name}).then(function(){ toast("דילגנו על "+backoffice[cur].name+" — הבא בתור: "+backoffice[target].name); });
+}
+function clearForce(){
+  const hadForce = !!(queueOverride && queueOverride.id && backoffice[queueOverride.id]);
+  db.ref(H+"queueOverride").remove().then(function(){
+    toast(hadForce ? "התור חזר לסדר האוטומטי 🔓" : "התור כבר במצב אוטומטי ✓");
+  });
+}
+
+/* ---------- הסקר ---------- */
+function renderPoll(){
+  const st=boStats(), ni=nextInfo(), next=ni?ni.id:null;
+  const nextLabel = ni ? "⭐ הבא בתור"+(ni.quota>1?" ("+ni.pos+" מתוך "+ni.quota+")":"") : "";
+  const entries=Object.entries(backoffice);
+  const maxDay=Math.max(1, ...entries.map(([id])=>st[id].day));
+  const html=entries.map(([id,bo])=>{
+    const avail=isAvailable(bo);
+    const fillPct=Math.round(st[id].day/maxDay*88);
+    if(!avail){
+      return `<div class="poll-opt unavail">
+        <div class="poll-avatar" style="background:${bo.color}">${esc(bo.name.slice(0,2))}</div>
+        <div class="poll-name">${esc(bo.name)}</div>
+        <span class="unavail-txt">לא בתור היום</span>
+      </div>`;
+    }
+    return `<div class="poll-opt" onclick="pollTap('${id}')">
+      <div class="poll-fill" style="width:${st[id].day?fillPct:0}%"></div>
+      <div class="poll-avatar" style="background:${bo.color}">${esc(bo.name.slice(0,2))}</div>
+      <div class="poll-name">${esc(bo.name)}</div>
+      ${id===next?'<span class="next-badge">'+nextLabel+'</span>':""}
+      <div class="poll-count">${st[id].day}</div>
+    </div>`;
+  }).join("");
+  document.getElementById("pollList").innerHTML = entries.length ? html : '<div class="empty">אין שמות עדיין — מוסיפים במסך ⚙️ ניהול</div>';
+}
+
+function pollTap(id){
+  if(!backoffice[id] || !isAvailable(backoffice[id])) return;
+  if(confirm("לנתב את ההצעה ל"+backoffice[id].name+"?")) recordDeal("מרכזיה", id);
+}
+function recordDeal(me, id){
+  const boName=backoffice[id].name;
+  db.ref(H+"deals").push({
+    marketer:me, assigneeId:id, assigneeName:boName,
+    ts:firebase.database.ServerValue.TIMESTAMP
+  });
+  /* קיבלה הצעה — הקפיצה לראש התור מתבטלת */
+  if(queueOverride && queueOverride.id===id) db.ref(H+"queueOverride").remove();
+  toast("🎉 נרשם! ההצעה נותבה ל"+boName);
+}
+
+/* ---------- זמינות ---------- */
+function markUnavail(id){
+  if(!backoffice[id]) return;
+  const when = currentWorkDay()>todayKey() ? "מחר" : "היום";
+  if(confirm("לחסום את "+backoffice[id].name+" ל"+when+"? (התור ידלג)"))
+    db.ref(H+"config/backoffice/"+id+"/unavailable").set(currentWorkDay());
+}
+function markAvail(id){
+  if(!backoffice[id]) return;
+  db.ref(H+"config/backoffice/"+id+"/unavailable").set("");
+  toast(backoffice[id].name+" שוב בתור 👍");
+}
+
+/* ---------- רשימת היום ---------- */
+function renderToday(){
+  const sd=effDayStart();
+  const today=dealList().filter(d=>d.ts>=sd).reverse();
+  const prep = currentWorkDay()>todayKey() ? " · מוכן ליום הבא 🌅" : "";
+  document.getElementById("todayTitle").textContent = "ההצעות של היום ("+today.length+") · "+fmtDate(Date.now())+prep;
+  document.getElementById("todayList").innerHTML = today.length ? today.map(d=>{
+    const color=(backoffice[d.assigneeId]||{}).color||"#9ca3af";
+    return `<div class="today-row">
+      <span class="today-time">${fmtTime(d.ts)}</span>
+      הצעה ➤
+      <span class="today-dot" style="background:${color}"></span><b>${esc(d.assigneeName)}</b>
+      <button class="cancel-x" onclick="delDeal('${d.id}')">ביטול</button>
+    </div>`;
+  }).join("") : '<div class="empty">עדיין אין הצעות היום 🚀</div>';
+}
+
+/* ---------- סיכומים ---------- */
+function setScope(s){
+  scope=s;
+  document.querySelectorAll(".scope-tabs button").forEach(b=>b.classList.toggle("on",b.dataset.scope===s));
+  document.getElementById("dateRow").style.display = s==="date" ? "block" : "none";
+  if(s==="date" && !document.getElementById("datePick").value)
+    document.getElementById("datePick").value = todayKey();
+  renderSummary();
+}
+function scopeStart(){ return scope==="day"?effDayStart():scope==="week"?startOfWeek():startOfMonth(); }
+function pickedRange(){
+  const v=document.getElementById("datePick").value;
+  if(!v) return null;
+  const p=v.split("-");
+  const d=new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10));
+  return {from:d.getTime(), to:d.getTime()+86400000};
+}
+function scopeName(){
+  if(scope==="date"){ const r=pickedRange(); return r?fmtDate(r.from):"בחרי תאריך"; }
+  return {day:"היום",week:"השבוע",month:"החודש"}[scope];
+}
+function summaryData(){
+  let from, to=Infinity;
+  if(scope==="date"){
+    const r=pickedRange();
+    if(!r) return {bo:{},mk:{},total:0,list:[]};
+    from=r.from; to=r.to;
+  } else from=scopeStart();
+  const list=dealList().filter(d=>d.ts>=from && d.ts<to);
+  const bo={};
+  list.forEach(d=>{ bo[d.assigneeName]=(bo[d.assigneeName]||0)+1; });
+  return {bo,total:list.length,list};
+}
+function tableHTML(obj){
+  const rows=Object.entries(obj).sort((a,b)=>b[1]-a[1]);
+  if(!rows.length) return '<div class="empty" style="padding:12px;">אין נתונים בתקופה זו</div>';
+  return '<table class="sum"><tr><th>שם</th><th>הצעות</th></tr>'+
+    rows.map(([n,c])=>`<tr><td>${esc(n)}</td><td class="num">${c}</td></tr>`).join("")+"</table>";
+}
+function renderSummary(){
+  const data=summaryData();
+  document.getElementById("sumBO").innerHTML=tableHTML(data.bo);
+  const wrap=document.getElementById("sumActivityWrap");
+  if(scope==="date"){
+    wrap.style.display="block";
+    document.getElementById("sumActivity").innerHTML = data.list.length ? data.list.slice().reverse().map(d=>{
+      const color=(backoffice[d.assigneeId]||{}).color||"#9ca3af";
+      return `<div class="today-row">
+        <span class="today-time">${fmtTime(d.ts)}</span>
+        הצעה ➤
+        <span class="today-dot" style="background:${color}"></span><b>${esc(d.assigneeName)}</b>
+      </div>`;
+    }).join("") : '<div class="empty">אין פעילות בתאריך הזה</div>';
+  } else wrap.style.display="none";
+}
+function summaryText(){
+  const {bo,mk,total}=summaryData();
+  let t = scope==="date"
+    ? `📊 סיכום הצעות — ${scopeName()}\n`
+    : `📊 סיכום הצעות — ${scopeName()} (${fmtDate(Date.now())})\n`;
+  t+=`סה"כ: ${total} הצעות\n\n🗂️ משווקים:\n`;
+  t+=Object.entries(bo).sort((a,b)=>b[1]-a[1]).map(([n,c])=>`• ${n} — ${c}`).join("\n")||"• —";
+  return t;
+}
+function copySummary(){
+  const txt=summaryText();
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(()=>toast("הסיכום הועתק 📋")).catch(()=>fallbackCopy(txt));
+  } else fallbackCopy(txt);
+}
+function fallbackCopy(txt){
+  const ta=document.createElement("textarea"); ta.value=txt; document.body.appendChild(ta);
+  ta.select(); document.execCommand("copy"); ta.remove(); toast("הסיכום הועתק 📋");
+}
+function shareWhatsapp(){ window.open("https://wa.me/?text="+encodeURIComponent(summaryText()),"_blank"); }
+
+/* ---------- ניהול ---------- */
+function tryAdmin(){
+  if(document.getElementById("adminCodeInput").value===ADMIN_CODE){
+    ssSet("adminOkHatz","1"); renderAdmin();
+  } else toast("קוד שגוי");
+}
+function renderAdmin(){
+  if(ssGet("adminOkHatz")!=="1") return;
+  document.getElementById("adminLock").style.display="none";
+  document.getElementById("adminArea").style.display="block";
+  document.getElementById("adminBO").innerHTML=Object.entries(backoffice).map(([id,bo])=>{
+    const off=!isAvailable(bo);
+    return `<div class="admin-row">
+      <div class="mini-avatar" style="background:${bo.color}">${esc(bo.name.slice(0,2))}</div>
+      <div class="name">${esc(bo.name)}</div>
+      <select class="quota-sel" title="כמה הצעות רצוף לפני שהתור עובר" onchange="setQuota('${id}',this.value)">${[1,2,3,4,5].map(q=>`<option value="${q}" ${q===(bo.quota||1)?"selected":""}>×${q}</option>`).join("")}</select>
+      <button class="mini-btn ${off?'toggled':''}" onclick="${off?`markAvail('${id}')`:`markUnavail('${id}')`}">${off?"🚫 חסום/ה":"בתור"}</button>
+      <button class="mini-btn danger" onclick="delBO('${id}')">מחיקה</button></div>`;
+  }).join("")||'<div class="empty" style="padding:10px;">אין עדיין — מוסיפים למטה</div>';
+  const ord=effectiveOrder(), ni=nextInfo(), nextId=ni?ni.id:null;
+  const forced = !!(queueOverride && queueOverride.id && backoffice[queueOverride.id]);
+  document.getElementById("adminNextBox").innerHTML = ni
+    ? `הבא בתור: <b style="font-size:1.05rem;">⭐ ${esc(backoffice[ni.id].name)}</b>${ni.quota>1?` <span style="color:var(--muted);">(${ni.pos} מתוך ${ni.quota})</span>`:""}`
+      + (forced ? ' <span style="color:#d97706;font-size:.8rem;">· נקבע ידנית</span>' : ' <span style="color:var(--muted);font-size:.8rem;">· אוטומטי</span>')
+    : '<span style="color:var(--muted);">אין אף אחד בתור</span>';
+  /* הכפתור תמיד פעיל — נותן משוב גם כשאין קביעה ידנית */
+  document.getElementById("adminOrder").innerHTML = ord.length ? ord.map((id,i)=>{
+    const bo=backoffice[id], isNext=id===nextId, avail=isAvailable(bo);
+    return `<div class="admin-row" ${isNext?'style="background:var(--primary-soft);border-radius:8px;padding-inline:6px;"':""}>
+      <span style="color:var(--muted);font-size:.8rem;min-width:16px;">${i+1}.</span>
+      <div class="mini-avatar" style="background:${bo.color}">${esc(bo.name.slice(0,2))}</div>
+      <div class="name">${esc(bo.name)}${isNext?' ⭐':""}${avail?"":' <span style="color:#dc2626;font-size:.75rem;">(חסום/ה)</span>'}</div>
+      <button class="mini-btn" title="קבעי כהבא בתור" ${(isNext||!avail)?"disabled":""} onclick="forceNext('${id}')">⭐</button>
+      <button class="mini-btn" ${i===0?"disabled":""} onclick="moveOrder('${id}',-1)">⬆️</button>
+      <button class="mini-btn" ${i===ord.length-1?"disabled":""} onclick="moveOrder('${id}',1)">⬇️</button>
+    </div>`;
+  }).join("") : '<div class="empty" style="padding:10px;">אין משווקים ברשימה</div>';
+  const recent=dealList().reverse().slice(0,20);
+  document.getElementById("adminDeals").innerHTML = recent.length ? recent.map(d=>{
+    const when = dayKey(d.ts)===todayKey() ? fmtTime(d.ts) : fmtDate(d.ts)+" "+fmtTime(d.ts);
+    return `<div class="admin-row">
+      <div class="name" style="font-weight:400;font-size:.88rem;">
+        <span style="color:var(--muted);font-size:.78rem;">${when}</span> ·
+        הצעה ➤ <b>${esc(d.assigneeName)}</b>
+      </div>
+      <button class="mini-btn danger" onclick="delDeal('${d.id}')">ביטול</button></div>`;
+  }).join("") : '<div class="empty" style="padding:10px;">אין הצעות רשומות</div>';
+}
+function delDeal(id){
+  const d=deals[id]; if(!d) return;
+  if(!confirm("לבטל את ההצעה שנותבה ל"+d.assigneeName+"?")) return;
+  db.ref(H+"deals/"+id).remove().then(function(){
+    /* מי שבוטלה לו ההצעה חוזר לראש התור */
+    if(backoffice[d.assigneeId]){
+      db.ref(H+"queueOverride").set({id:d.assigneeId, name:d.assigneeName});
+      toast("ההצעה בוטלה — "+d.assigneeName+" בראש התור עכשיו ↩️");
+    } else toast("ההצעה בוטלה ↩️");
+  });
+}
+function setQuota(id,val){ db.ref(H+"config/backoffice/"+id+"/quota").set(parseInt(val,10)||1); }
+function moveOrder(id,dir){
+  const ord=effectiveOrder(); const i=ord.indexOf(id), j=i+dir;
+  if(i<0||j<0||j>=ord.length) return;
+  ord[i]=ord[j]; ord[j]=id;
+  db.ref(H+"config/order").set(ord);
+}
+function nextDay(){
+  if(!confirm("לעבור ליום הבא? המונה היומי יתאפס, הסבב יתחיל מתחילת הרשימה, וחסימות של היום ייפתחו.")) return;
+  const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+1);
+  db.ref(H+"config/workDay").set(dayKey(d.getTime()));
+  db.ref(H+"config/dayStart").set(firebase.database.ServerValue.TIMESTAMP);
+  db.ref(H+"config/roundStart").set(firebase.database.ServerValue.TIMESTAMP);
+  db.ref(H+"queueOverride").remove();
+  toast("היום הבא מוכן 🌅 הסבב יתחיל מתחילת הרשימה");
+}
+function resetRound(){
+  if(confirm("להתחיל את הסבב מחדש מתחילת הרשימה?"))
+    db.ref(H+"config/roundStart").set(firebase.database.ServerValue.TIMESTAMP).then(function(){ toast("הסבב אופס — מתחילים מההתחלה 🔄"); });
+}
+function addBO(){
+  const inp=document.getElementById("newBOName"), name=inp.value.trim();
+  if(!name) return;
+  const ref=db.ref(H+"config/backoffice").push({name, color:PALETTE[Object.keys(backoffice).length%PALETTE.length], unavailable:"", quota:1});
+  db.ref(H+"config/order").set(effectiveOrder().concat([ref.key]));
+  inp.value="";
+}
+function resetDeals(){
+  if(!confirm("למחוק את כל ההצעות שנרשמו? רשימות הצוות יישארו.")) return;
+  if(!confirm("בטוחה? אי אפשר לשחזר אחרי המחיקה.")) return;
+  db.ref(H+"deals").remove().then(function(){
+    db.ref(H+"queueOverride").remove();
+    toast("כל ההצעות נמחקו 🧹");
+  });
+}
+function delBO(id){
+  if(!confirm("למחוק את "+backoffice[id].name+"?")) return;
+  db.ref(H+"config/backoffice/"+id).remove();
+  db.ref(H+"config/order").set(effectiveOrder().filter(function(x){ return x!==id; }));
+}
+
+/* ---------- כללי ---------- */
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+function renderAll(){ renderPoll(); renderToday(); renderSummary(); renderAdmin(); }
+renderAll();
+setInterval(renderAll, 60*1000);
+</script>
+</body>
+</html>
